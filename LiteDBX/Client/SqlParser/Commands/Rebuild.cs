@@ -1,4 +1,6 @@
 ﻿using LiteDbX.Engine;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
@@ -7,19 +9,17 @@ internal partial class SqlParser
     /// <summary>
     /// SHRINK
     /// </summary>
-    private BsonDataReader ParseRebuild()
+    private async ValueTask<IBsonDataReader> ParseRebuild(CancellationToken cancellationToken)
     {
         _tokenizer.ReadToken().Expect("REBUILD");
 
-        var options = new RebuildOptions();
+        RebuildOptions options = null;
 
         // read <eol> or ;
         var next = _tokenizer.LookAhead();
 
         if (next.Type == TokenType.EOF || next.Type == TokenType.SemiColon)
         {
-            options = null;
-
             _tokenizer.ReadToken();
         }
         else
@@ -27,24 +27,15 @@ internal partial class SqlParser
             var reader = new JsonReader(_tokenizer);
             var json = reader.Deserialize();
 
-            if (!json.IsDocument)
-            {
-                throw LiteException.UnexpectedToken(next);
-            }
+            if (!json.IsDocument) throw LiteException.UnexpectedToken(next);
 
-            if (json["password"].IsString)
-            {
-                options.Password = json["password"];
-            }
+            options = new RebuildOptions();
 
-            if (json["collation"].IsString)
-            {
-                options.Collation = new Collation(json["collation"].AsString);
-            }
+            if (json["password"].IsString) options.Password = json["password"];
+            if (json["collation"].IsString) options.Collation = new Collation(json["collation"].AsString);
         }
 
-        var diff = _engine.Rebuild(options);
-
+        var diff = await _engine.Rebuild(options, cancellationToken).ConfigureAwait(false);
         return new BsonDataReader((int)diff);
     }
 }

@@ -56,7 +56,7 @@ public interface ILiteQueryableResult<T>
     ILiteQueryableResult<T> ForUpdate();
 
     /// <summary>Return the query execution plan without running the query.</summary>
-    BsonDocument GetPlan();
+    ValueTask<BsonDocument> GetPlan(CancellationToken cancellationToken = default);
 
     // ── Execution (async-only) ────────────────────────────────────────────────
 

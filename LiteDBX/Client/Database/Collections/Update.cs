@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
@@ -10,7 +12,7 @@ public partial class LiteCollection<T>
     /// <summary>
     /// Update a document in this collection. Returns false if not found document in collection
     /// </summary>
-    public bool Update(T entity)
+    public async ValueTask<bool> Update(T entity, CancellationToken cancellationToken = default)
     {
         if (entity == null)
         {
@@ -20,13 +22,13 @@ public partial class LiteCollection<T>
         // get BsonDocument from object
         var doc = _mapper.ToDocument(entity);
 
-        return _engine.Update(Name, new[] { doc }) > 0;
+        return await _engine.Update(Name, new[] { doc }, cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>
     /// Update a document in this collection. Returns false if not found document in collection
     /// </summary>
-    public bool Update(BsonValue id, T entity)
+    public async ValueTask<bool> Update(BsonValue id, T entity, CancellationToken cancellationToken = default)
     {
         if (entity == null)
         {
@@ -44,20 +46,20 @@ public partial class LiteCollection<T>
         // set document _id using id parameter
         doc["_id"] = id;
 
-        return _engine.Update(Name, new[] { doc }) > 0;
+        return await _engine.Update(Name, new[] { doc }, cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>
     /// Update all documents
     /// </summary>
-    public int Update(IEnumerable<T> entities)
+    public async ValueTask<int> Update(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
         if (entities == null)
         {
             throw new ArgumentNullException(nameof(entities));
         }
 
-        return _engine.Update(Name, entities.Select(x => _mapper.ToDocument(x)));
+        return (int)await _engine.Update(Name, entities.Select(x => _mapper.ToDocument(x)), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -65,7 +67,7 @@ public partial class LiteCollection<T>
     /// over current document (according with predicate).
     /// Eg: col.UpdateMany("{ Name: UPPER($.Name), Age }", "_id > 0")
     /// </summary>
-    public int UpdateMany(BsonExpression transform, BsonExpression predicate)
+    public ValueTask<int> UpdateMany(BsonExpression transform, BsonExpression predicate, CancellationToken cancellationToken = default)
     {
         if (transform == null)
         {
@@ -82,14 +84,14 @@ public partial class LiteCollection<T>
             throw new ArgumentException("Extend expression must return a document. Eg: `col.UpdateMany('{ Name: UPPER(Name) }', 'Age > 10')`");
         }
 
-        return _engine.UpdateMany(Name, transform, predicate);
+        return _engine.UpdateMany(Name, transform, predicate, cancellationToken);
     }
 
     /// <summary>
     /// Update many document based on merge current document with extend expression. Use your class with initializers.
     /// Eg: col.UpdateMany(x => new Customer { Name = x.Name.ToUpper(), Salary: 100 }, x => x.Name == "John")
     /// </summary>
-    public int UpdateMany(Expression<Func<T, T>> extend, Expression<Func<T, bool>> predicate)
+    public ValueTask<int> UpdateMany(Expression<Func<T, T>> extend, Expression<Func<T, bool>> predicate, CancellationToken cancellationToken = default)
     {
         if (extend == null)
         {
@@ -109,6 +111,6 @@ public partial class LiteCollection<T>
             throw new ArgumentException("Extend expression must return an anonymous class to be merge with entities. Eg: `col.UpdateMany(x => new { Name = x.Name.ToUpper() }, x => x.Age > 10)`");
         }
 
-        return _engine.UpdateMany(Name, ext, pred);
+        return _engine.UpdateMany(Name, ext, pred, cancellationToken);
     }
 }

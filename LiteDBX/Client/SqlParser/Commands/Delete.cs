@@ -1,11 +1,14 @@
-﻿namespace LiteDbX;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LiteDbX;
 
 internal partial class SqlParser
 {
     /// <summary>
     /// DELETE {collection} WHERE {whereExpr}
     /// </summary>
-    private BsonDataReader ParseDelete()
+    private async ValueTask<IBsonDataReader> ParseDelete(CancellationToken cancellationToken)
     {
         _tokenizer.ReadToken().Expect("DELETE");
 
@@ -23,9 +26,7 @@ internal partial class SqlParser
 
         _tokenizer.ReadToken().Expect(TokenType.EOF, TokenType.SemiColon);
 
-        _tokenizer.ReadToken();
-
-        var result = _engine.DeleteMany(collection, where);
+        var result = await _engine.DeleteMany(collection, where, cancellationToken).ConfigureAwait(false);
 
         return new BsonDataReader(result);
     }

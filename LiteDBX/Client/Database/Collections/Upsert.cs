@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
@@ -8,33 +10,33 @@ public partial class LiteCollection<T>
     /// <summary>
     /// Insert or Update a document in this collection.
     /// </summary>
-    public bool Upsert(T entity)
+    public async ValueTask<bool> Upsert(T entity, CancellationToken cancellationToken = default)
     {
         if (entity == null)
         {
             throw new ArgumentNullException(nameof(entity));
         }
 
-        return Upsert(new[] { entity }) == 1;
+        return await Upsert(new[] { entity }, cancellationToken).ConfigureAwait(false) == 1;
     }
 
     /// <summary>
     /// Insert or Update all documents
     /// </summary>
-    public int Upsert(IEnumerable<T> entities)
+    public async ValueTask<int> Upsert(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
         if (entities == null)
         {
             throw new ArgumentNullException(nameof(entities));
         }
 
-        return _engine.Upsert(Name, GetBsonDocs(entities), AutoId);
+        return (int)await _engine.Upsert(Name, GetBsonDocs(entities), AutoId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Insert or Update a document in this collection.
     /// </summary>
-    public bool Upsert(BsonValue id, T entity)
+    public async ValueTask<bool> Upsert(BsonValue id, T entity, CancellationToken cancellationToken = default)
     {
         if (entity == null)
         {
@@ -52,6 +54,6 @@ public partial class LiteCollection<T>
         // set document _id using id parameter
         doc["_id"] = id;
 
-        return _engine.Upsert(Name, new[] { doc }, AutoId) > 0;
+        return await _engine.Upsert(Name, new[] { doc }, AutoId, cancellationToken).ConfigureAwait(false) > 0;
     }
 }

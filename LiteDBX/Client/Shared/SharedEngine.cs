@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using LiteDbX.Engine;
 #if NETFRAMEWORK
 using System.Security.AccessControl;
@@ -10,6 +12,18 @@ using System.Security.Principal;
 
 namespace LiteDbX;
 
+/// <summary>
+/// Shared-mode engine wrapper that serialises multi-process access via a named OS mutex.
+///
+/// Phase 4 compile-correctness update: all methods now match the async <see cref="ILiteEngine"/>
+/// contract. The internal mutex-based locking strategy (WaitOne / ReleaseMutex) remains
+/// synchronous and is noted as a Phase 6 deferred item: the mutex acquisition must be replaced
+/// with an async-safe inter-process coordination mechanism (e.g., async-compatible file locking
+/// or a named semaphore with WaitAsync support) before blocking threads in async contexts is
+/// acceptable.
+///
+/// Phase 6 deferred: full SharedEngine redesign for async-safe shared-mode operation.
+/// </summary>
 public class SharedEngine : ILiteEngine
 {
     private readonly Mutex _mutex;
@@ -28,10 +42,8 @@ public class SharedEngine : ILiteEngine
 #if NETFRAMEWORK
             var allowEveryoneRule = new MutexAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
                 MutexRights.FullControl, AccessControlType.Allow);
-
             var securitySettings = new MutexSecurity();
             securitySettings.AddAccessRule(allowEveryoneRule);
-
             _mutex = new Mutex(false, "Global\\" + name + ".Mutex", out _, securitySettings);
 #else
             _mutex = new Mutex(false, "Global\\" + name + ".Mutex");
@@ -43,38 +55,54 @@ public class SharedEngine : ILiteEngine
         }
     }
 
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
+    ~SharedEngine() { Dispose(false); }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing && _engine != null)
+        {
+            _engine.Dispose();
+            _engine = null;
+            _mutex.ReleaseMutex();
+        }
+    }
+
+    /// <summary>Phase 6 deferred: DisposeAsync still delegates to sync Dispose.</summary>
+    public ValueTask DisposeAsync()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+        return default;
+    }
+
+    // ── Mutex open/close helpers ───────────────────────────────────────────────
+
     /// <summary>
-    /// Open database in safe mode
+    /// Phase 6 bridge: WaitOne blocks the calling thread.
+    /// Replace with an async-safe equivalent in Phase 6.
     /// </summary>
-    /// <returns>true if successfully opened; false if already open</returns>
     private bool OpenDatabase()
     {
-        try
-        {
-            // Acquire mutex for every call to open DB.
-            _mutex.WaitOne();
-        }
-        catch (AbandonedMutexException) { }
+        try { _mutex.WaitOne(); } catch (AbandonedMutexException) { }
 
-        // Don't create a new engine while a transaction is running.
         if (!_transactionRunning && _engine == null)
         {
             try
             {
                 _engine = new LiteEngine(_settings);
-
                 return true;
             }
             catch
             {
                 _mutex.ReleaseMutex();
-
                 throw;
             }
         }
@@ -82,206 +110,122 @@ public class SharedEngine : ILiteEngine
         return false;
     }
 
-    /// <summary>
-    /// Dequeue stack and dispose database on empty stack
-    /// </summary>
     private void CloseDatabase()
     {
-        // Don't dispose the engine while a transaction is running.
         if (!_transactionRunning && _engine != null)
         {
-            // If no transaction pending, dispose the engine.
             _engine.Dispose();
             _engine = null;
         }
 
-        // Release Mutex on every call to close DB.
         _mutex.ReleaseMutex();
     }
 
-    ~SharedEngine()
+    private async ValueTask<T> QueryDatabaseAsync<T>(Func<ValueTask<T>> query)
     {
-        Dispose(false);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            if (_engine != null)
-            {
-                _engine.Dispose();
-                _engine = null;
-                _mutex.ReleaseMutex();
-            }
-        }
-    }
-
-    private T QueryDatabase<T>(Func<T> Query)
-    {
-        var opened = OpenDatabase();
-
+        var opened = OpenDatabase(); // Phase 6 bridge: blocking WaitOne
         try
         {
-            return Query();
+            return await query().ConfigureAwait(false);
         }
         finally
         {
-            if (opened)
+            if (opened) CloseDatabase();
+        }
+    }
+
+    // ── Transactions ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Phase 6 deferred: SQL-level transaction scoping for SharedEngine requires
+    /// redesign of the mutex lifetime to span multiple Execute() calls.
+    /// </summary>
+    public ValueTask<ILiteTransaction> BeginTransaction(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "Explicit transactions in shared mode require Phase 6 redesign. " +
+            "Use single-call operations or a dedicated LiteEngine instance.");
+
+    // ── Query ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Phase 6 bridge: mutex is acquired on enumeration start and released on disposal of the stream.
+    /// Blocking WaitOne is used until Phase 6 replaces this with async-safe coordination.
+    /// </summary>
+    public IAsyncEnumerable<BsonDocument> Query(
+        string collection,
+        Query query,
+        CancellationToken cancellationToken = default)
+    {
+        return QueryStream(collection, query, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<BsonDocument> QueryStream(
+        string collection,
+        Query query,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var opened = OpenDatabase(); // Phase 6 bridge: blocking WaitOne
+
+        try
+        {
+            await foreach (var doc in _engine.Query(collection, query, cancellationToken).ConfigureAwait(false))
             {
-                CloseDatabase();
+                yield return doc;
             }
-        }
-    }
-
-    #region Transaction Operations
-
-    public bool BeginTrans()
-    {
-        OpenDatabase();
-
-        try
-        {
-            _transactionRunning = _engine.BeginTrans();
-
-            return _transactionRunning;
-        }
-        catch
-        {
-            CloseDatabase();
-
-            throw;
-        }
-    }
-
-    public bool Commit()
-    {
-        if (_engine == null)
-        {
-            return false;
-        }
-
-        try
-        {
-            return _engine.Commit();
         }
         finally
         {
-            _transactionRunning = false;
-            CloseDatabase();
+            if (opened) CloseDatabase();
         }
     }
 
-    public bool Rollback()
-    {
-        if (_engine == null)
-        {
-            return false;
-        }
+    // ── Write operations ──────────────────────────────────────────────────────
 
-        try
-        {
-            return _engine.Rollback();
-        }
-        finally
-        {
-            _transactionRunning = false;
-            CloseDatabase();
-        }
-    }
+    public ValueTask<int> Insert(string collection, IEnumerable<BsonDocument> docs, BsonAutoId autoId, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Insert(collection, docs, autoId, cancellationToken));
 
-    #endregion
+    public ValueTask<int> Update(string collection, IEnumerable<BsonDocument> docs, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Update(collection, docs, cancellationToken));
 
-    #region Read Operation
+    public ValueTask<int> UpdateMany(string collection, BsonExpression extend, BsonExpression predicate, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.UpdateMany(collection, extend, predicate, cancellationToken));
 
-    public IBsonDataReader Query(string collection, Query query)
-    {
-        var opened = OpenDatabase();
+    public ValueTask<int> Upsert(string collection, IEnumerable<BsonDocument> docs, BsonAutoId autoId, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Upsert(collection, docs, autoId, cancellationToken));
 
-        var reader = _engine.Query(collection, query);
+    public ValueTask<int> Delete(string collection, IEnumerable<BsonValue> ids, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Delete(collection, ids, cancellationToken));
 
-        return new SharedDataReader(reader, () =>
-        {
-            if (opened)
-            {
-                CloseDatabase();
-            }
-        });
-    }
+    public ValueTask<int> DeleteMany(string collection, BsonExpression predicate, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.DeleteMany(collection, predicate, cancellationToken));
 
-    public BsonValue Pragma(string name)
-    {
-        return QueryDatabase(() => _engine.Pragma(name));
-    }
+    // ── Schema management ─────────────────────────────────────────────────────
 
-    public bool Pragma(string name, BsonValue value)
-    {
-        return QueryDatabase(() => _engine.Pragma(name, value));
-    }
+    public ValueTask<bool> DropCollection(string name, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.DropCollection(name, cancellationToken));
 
-    #endregion
+    public ValueTask<bool> RenameCollection(string name, string newName, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.RenameCollection(name, newName, cancellationToken));
 
-    #region Write Operations
+    public ValueTask<bool> EnsureIndex(string collection, string name, BsonExpression expression, bool unique, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.EnsureIndex(collection, name, expression, unique, cancellationToken));
 
-    public int Checkpoint()
-    {
-        return QueryDatabase(() => _engine.Checkpoint());
-    }
+    public ValueTask<bool> DropIndex(string collection, string name, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.DropIndex(collection, name, cancellationToken));
 
-    public long Rebuild(RebuildOptions options)
-    {
-        return QueryDatabase(() => _engine.Rebuild(options));
-    }
+    // ── Maintenance ───────────────────────────────────────────────────────────
 
-    public int Insert(string collection, IEnumerable<BsonDocument> docs, BsonAutoId autoId)
-    {
-        return QueryDatabase(() => _engine.Insert(collection, docs, autoId));
-    }
+    public ValueTask<int> Checkpoint(CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Checkpoint(cancellationToken));
 
-    public int Update(string collection, IEnumerable<BsonDocument> docs)
-    {
-        return QueryDatabase(() => _engine.Update(collection, docs));
-    }
+    public ValueTask<long> Rebuild(RebuildOptions options, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Rebuild(options, cancellationToken));
 
-    public int UpdateMany(string collection, BsonExpression extend, BsonExpression predicate)
-    {
-        return QueryDatabase(() => _engine.UpdateMany(collection, extend, predicate));
-    }
+    // ── Pragmas ───────────────────────────────────────────────────────────────
 
-    public int Upsert(string collection, IEnumerable<BsonDocument> docs, BsonAutoId autoId)
-    {
-        return QueryDatabase(() => _engine.Upsert(collection, docs, autoId));
-    }
+    public ValueTask<BsonValue> Pragma(string name, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Pragma(name, cancellationToken));
 
-    public int Delete(string collection, IEnumerable<BsonValue> ids)
-    {
-        return QueryDatabase(() => _engine.Delete(collection, ids));
-    }
-
-    public int DeleteMany(string collection, BsonExpression predicate)
-    {
-        return QueryDatabase(() => _engine.DeleteMany(collection, predicate));
-    }
-
-    public bool DropCollection(string name)
-    {
-        return QueryDatabase(() => _engine.DropCollection(name));
-    }
-
-    public bool RenameCollection(string name, string newName)
-    {
-        return QueryDatabase(() => _engine.RenameCollection(name, newName));
-    }
-
-    public bool DropIndex(string collection, string name)
-    {
-        return QueryDatabase(() => _engine.DropIndex(collection, name));
-    }
-
-    public bool EnsureIndex(string collection, string name, BsonExpression expression, bool unique)
-    {
-        return QueryDatabase(() => _engine.EnsureIndex(collection, name, expression, unique));
-    }
-
-    #endregion
+    public ValueTask<bool> Pragma(string name, BsonValue value, CancellationToken cancellationToken = default)
+        => QueryDatabaseAsync(() => _engine.Pragma(name, value, cancellationToken));
 }

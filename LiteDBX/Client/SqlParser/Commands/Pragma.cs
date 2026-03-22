@@ -1,4 +1,7 @@
-﻿namespace LiteDbX;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LiteDbX;
 
 internal partial class SqlParser
 {
@@ -6,37 +9,27 @@ internal partial class SqlParser
     /// PRAGMA [DB_PARAM] = VALUE
     /// PRAGMA [DB_PARAM]
     /// </summary>
-    private IBsonDataReader ParsePragma()
+    private async ValueTask<IBsonDataReader> ParsePragma(CancellationToken cancellationToken)
     {
         _tokenizer.ReadToken().Expect("PRAGMA");
 
         var name = _tokenizer.ReadToken().Expect(TokenType.Word).Value;
-
         var eof = _tokenizer.LookAhead();
 
         if (eof.Type == TokenType.EOF || eof.Type == TokenType.SemiColon)
         {
             _tokenizer.ReadToken();
-
-            var result = _engine.Pragma(name);
-
+            var result = await _engine.Pragma(name, cancellationToken).ConfigureAwait(false);
             return new BsonDataReader(result);
         }
 
         if (eof.Type == TokenType.Equals)
         {
-            // read =
             _tokenizer.ReadToken().Expect(TokenType.Equals);
-
-            // read <value>
-            var reader = new JsonReader(_tokenizer);
-            var value = reader.Deserialize();
-
-            // read last ; \ <eof>
+            var value = new JsonReader(_tokenizer).Deserialize();
             _tokenizer.ReadToken().Expect(TokenType.EOF, TokenType.SemiColon);
 
-            var result = _engine.Pragma(name, value);
-
+            var result = await _engine.Pragma(name, value, cancellationToken).ConfigureAwait(false);
             return new BsonDataReader(result);
         }
 

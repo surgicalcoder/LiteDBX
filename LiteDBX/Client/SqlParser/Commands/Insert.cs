@@ -1,17 +1,19 @@
-﻿namespace LiteDbX;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LiteDbX;
 
 internal partial class SqlParser
 {
     /// <summary>
     /// INSERT INTO {collection} VALUES {doc0} [, {docN}] [ WITH ID={type} ] ]
     /// </summary>
-    private BsonDataReader ParseInsert()
+    private async ValueTask<IBsonDataReader> ParseInsert(CancellationToken cancellationToken)
     {
         _tokenizer.ReadToken().Expect("INSERT");
         _tokenizer.ReadToken().Expect("INTO");
 
         var collection = _tokenizer.ReadToken().Expect(TokenType.Word).Value;
-
         var autoId = ParseWithAutoId();
 
         _tokenizer.ReadToken().Expect("VALUES");
@@ -19,8 +21,7 @@ internal partial class SqlParser
         // get list of documents (return an IEnumerable)
         // will validate EOF or ;
         var docs = ParseListOfDocuments();
-
-        var result = _engine.Insert(collection, docs, autoId);
+        var result = await _engine.Insert(collection, docs, autoId, cancellationToken).ConfigureAwait(false);
 
         return new BsonDataReader(result);
     }

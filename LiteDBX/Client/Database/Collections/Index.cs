@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Linq.Expressions;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
@@ -13,7 +15,7 @@ public partial class LiteCollection<T>
     /// <param name="name">Index name - unique name for this collection</param>
     /// <param name="expression">Create a custom expression function to be indexed</param>
     /// <param name="unique">If is a unique index</param>
-    public bool EnsureIndex(string name, BsonExpression expression, bool unique = false)
+    public ValueTask<bool> EnsureIndex(string name, BsonExpression expression, bool unique = false, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(name))
         {
@@ -25,7 +27,7 @@ public partial class LiteCollection<T>
             throw new ArgumentNullException(nameof(expression));
         }
 
-        return _engine.EnsureIndex(Name, name, expression, unique);
+        return _engine.EnsureIndex(Name, name, expression, unique, cancellationToken);
     }
 
     /// <summary>
@@ -34,16 +36,16 @@ public partial class LiteCollection<T>
     /// </summary>
     /// <param name="expression">Document field/expression</param>
     /// <param name="unique">If is a unique index</param>
-    public bool EnsureIndex(BsonExpression expression, bool unique = false)
+    public ValueTask<bool> EnsureIndex(BsonExpression expression, bool unique = false, CancellationToken cancellationToken = default)
     {
         if (expression == null)
         {
             throw new ArgumentNullException(nameof(expression));
         }
 
-        var name = Regex.Replace(expression.Source, @"[^a-z0-9]", "", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        var name = Regex.Replace(expression.Source, @"[^a-z0-9]", "", RegexOptions.IgnoreCase);
 
-        return EnsureIndex(name, expression, unique);
+        return EnsureIndex(name, expression, unique, cancellationToken);
     }
 
     /// <summary>
@@ -51,11 +53,9 @@ public partial class LiteCollection<T>
     /// </summary>
     /// <param name="keySelector">LinqExpression to be converted into BsonExpression to be indexed</param>
     /// <param name="unique">Create a unique keys index?</param>
-    public bool EnsureIndex<K>(Expression<Func<T, K>> keySelector, bool unique = false)
+    public ValueTask<bool> EnsureIndex<K>(Expression<Func<T, K>> keySelector, bool unique = false, CancellationToken cancellationToken = default)
     {
-        var expression = GetIndexExpression(keySelector);
-
-        return EnsureIndex(expression, unique);
+        return EnsureIndex(GetIndexExpression(keySelector), unique, cancellationToken);
     }
 
     /// <summary>
@@ -64,20 +64,16 @@ public partial class LiteCollection<T>
     /// <param name="name">Index name - unique name for this collection</param>
     /// <param name="keySelector">LinqExpression to be converted into BsonExpression to be indexed</param>
     /// <param name="unique">Create a unique keys index?</param>
-    public bool EnsureIndex<K>(string name, Expression<Func<T, K>> keySelector, bool unique = false)
+    public ValueTask<bool> EnsureIndex<K>(string name, Expression<Func<T, K>> keySelector, bool unique = false, CancellationToken cancellationToken = default)
     {
-        var expression = GetIndexExpression(keySelector);
-
-        return EnsureIndex(name, expression, unique);
+        return EnsureIndex(name, GetIndexExpression(keySelector), unique, cancellationToken);
     }
 
     /// <summary>
     /// Drop index and release slot for another index
     /// </summary>
-    public bool DropIndex(string name)
-    {
-        return _engine.DropIndex(Name, name);
-    }
+    public ValueTask<bool> DropIndex(string name, CancellationToken cancellationToken = default)
+        => _engine.DropIndex(Name, name, cancellationToken);
 
     /// <summary>
     /// Get index expression based on LINQ expression. Convert IEnumerable in MultiKey indexes

@@ -1,4 +1,7 @@
-﻿namespace LiteDbX;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LiteDbX;
 
 internal partial class SqlParser
 {
@@ -9,7 +12,7 @@ internal partial class SqlParser
     /// SET [{key} = {exprValue}, {key} = {exprValue} | { newDoc }]
     /// [ WHERE {whereExpr} ]
     /// </summary>
-    private BsonDataReader ParseUpdate()
+    private async ValueTask<IBsonDataReader> ParseUpdate(CancellationToken cancellationToken)
     {
         _tokenizer.ReadToken().Expect("UPDATE");
 
@@ -33,7 +36,7 @@ internal partial class SqlParser
         // read eof
         _tokenizer.ReadToken().Expect(TokenType.EOF, TokenType.SemiColon);
 
-        var result = _engine.UpdateMany(collection, transform, where);
+        var result = await _engine.UpdateMany(collection, transform, where, cancellationToken).ConfigureAwait(false);
 
         return new BsonDataReader(result);
     }

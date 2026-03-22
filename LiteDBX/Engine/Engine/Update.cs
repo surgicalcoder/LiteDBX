@@ -48,19 +48,15 @@ public partial class LiteEngine
         if (collection.IsNullOrWhiteSpace()) throw new ArgumentNullException(nameof(collection));
         if (transform == null) throw new ArgumentNullException(nameof(transform));
 
-        // Phase 2 bridge: read documents via sync query pipeline then update.
-        // Phase 4 will unify these into a single async streaming operation.
         var toUpdate = new List<BsonDocument>();
 
         var q = new Query { Select = "$", ForUpdate = true };
         if (predicate != null) q.Where.Add(predicate);
 
         var executor = new QueryExecutor(this, _state, _monitor, _sortDisk, _disk, _header.Pragmas, collection, q, null);
-        using var reader = executor.ExecuteQuery();
 
-        while (reader.ReadSync())
+        await foreach (var doc in executor.ExecuteQuery(cancellationToken).ConfigureAwait(false))
         {
-            var doc = reader.Current.AsDocument;
             var id = doc["_id"];
             var value = transform.ExecuteScalar(doc, _header.Pragmas.Collation);
 

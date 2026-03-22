@@ -1,55 +1,38 @@
 ﻿using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
 internal partial class SqlParser
 {
     /// <summary>
-    /// [ EXPLAIN ]
-    /// SELECT {selectExpr}
-    /// [ INTO {newcollection|$function} [ : {autoId} ] ]
-    /// [ FROM {collection|$function} ]
-    /// [ INCLUDE {pathExpr0} [, {pathExprN} ]
-    /// [ WHERE {filterExpr} ]
-    /// [ GROUP BY {groupByExpr} ]
-    /// [ HAVING {filterExpr} ]
-    /// [ ORDER BY {orderByExpr} [ ASC | DESC ] ]
-    /// [ LIMIT {number} ]
-    /// [ OFFSET {number} ]
-    /// [ FOR UPDATE ]
+    /// SELECT / EXPLAIN SELECT — synchronous parse, async-stream execution via BsonDataReader.
+    /// The returned reader wraps an IAsyncEnumerable from the engine; no await is needed here.
     /// </summary>
-    private IBsonDataReader ParseSelect()
+    private IBsonDataReader ParseSelect(CancellationToken cancellationToken = default)
     {
-        // initialize query definition
         var query = new Query();
-
         var token = _tokenizer.ReadToken();
 
         query.ExplainPlan = token.Is("EXPLAIN");
-
-        if (query.ExplainPlan)
-        {
-            token = _tokenizer.ReadToken();
-        }
+        if (query.ExplainPlan) token = _tokenizer.ReadToken();
 
         token.Expect("SELECT");
 
-        // read required SELECT <expr> and convert into single expression
         query.Select = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.SelectDocument, _parameters);
 
-        // read FROM|INTO
         var from = _tokenizer.ReadToken();
 
         if (from.Type == TokenType.EOF || from.Type == TokenType.SemiColon)
         {
-            // select with no FROM - just run expression (avoid DUAL table, Mr. Oracle)
-            //TODO: i think will be better add all sql into engine
-            var result = query.Select.Execute(_collation.Value);
-
+            // SELECT with no FROM — pure expression, no engine I/O
+            var result = query.Select.Execute(_collation);
             var defaultName = "expr";
-            var data = result.Select(x => x.IsDocument ? x.AsDocument : new BsonDocument { [defaultName] = x }).FirstOrDefault();
-
+            var data = System.Linq.Enumerable
+                .FirstOrDefault(System.Linq.Enumerable
+                    .Select(result, x => x.IsDocument ? x.AsDocument : new BsonDocument { [defaultName] = x }));
             return new BsonDataReader(data);
         }
 
@@ -57,7 +40,6 @@ internal partial class SqlParser
         {
             query.Into = ParseCollection(_tokenizer);
             query.IntoAutoId = ParseWithAutoId();
-
             _tokenizer.ReadToken().Expect("FROM");
         }
         else
@@ -65,56 +47,38 @@ internal partial class SqlParser
             from.Expect("FROM");
         }
 
-        // read FROM <name>
         var collection = ParseCollection(_tokenizer);
 
         var ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
 
         if (ahead.Is("INCLUDE"))
         {
-            // read first INCLUDE (before)
             _tokenizer.ReadToken();
-
-            foreach (var path in ParseListOfExpressions())
-            {
-                query.Includes.Add(path);
-            }
+            foreach (var path in ParseListOfExpressions()) query.Includes.Add(path);
         }
 
         ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
 
         if (ahead.Is("WHERE"))
         {
-            // read WHERE keyword
             _tokenizer.ReadToken();
-
-            var where = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
-
-            query.Where.Add(where);
+            query.Where.Add(BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters));
         }
 
         ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
 
         if (ahead.Is("GROUP"))
         {
-            // read GROUP BY keyword
             _tokenizer.ReadToken();
             _tokenizer.ReadToken().Expect("BY");
-
-            var groupBy = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
-
-            query.GroupBy = groupBy;
+            query.GroupBy = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
 
             ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
 
             if (ahead.Is("HAVING"))
             {
-                // read HAVING keyword
                 _tokenizer.ReadToken();
-
-                var having = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
-
-                query.Having = having;
+                query.Having = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
             }
         }
 
@@ -122,11 +86,9 @@ internal partial class SqlParser
 
         if (ahead.Is("ORDER"))
         {
-            // read ORDER BY keyword
             _tokenizer.ReadToken();
             _tokenizer.ReadToken().Expect("BY");
-
-            var orderBy = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
+            query.OrderBy = BsonExpression.Create(_tokenizer, BsonExpressionParserMode.Full, _parameters);
 
             var orderByOrder = Query.Ascending;
             var orderByToken = _tokenizer.LookAhead();
@@ -136,47 +98,22 @@ internal partial class SqlParser
                 orderByOrder = _tokenizer.ReadToken().Is("ASC") ? Query.Ascending : Query.Descending;
             }
 
-            query.OrderBy = orderBy;
             query.Order = orderByOrder;
         }
 
         ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
-
-        if (ahead.Is("LIMIT"))
-        {
-            // read LIMIT keyword
-            _tokenizer.ReadToken();
-            var limit = _tokenizer.ReadToken().Expect(TokenType.Int).Value;
-
-            query.Limit = Convert.ToInt32(limit);
-        }
+        if (ahead.Is("LIMIT"))  { _tokenizer.ReadToken(); query.Limit  = System.Convert.ToInt32(_tokenizer.ReadToken().Expect(TokenType.Int).Value); }
 
         ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
-
-        if (ahead.Is("OFFSET"))
-        {
-            // read OFFSET keyword
-            _tokenizer.ReadToken();
-            var offset = _tokenizer.ReadToken().Expect(TokenType.Int).Value;
-
-            query.Offset = Convert.ToInt32(offset);
-        }
+        if (ahead.Is("OFFSET")) { _tokenizer.ReadToken(); query.Offset = System.Convert.ToInt32(_tokenizer.ReadToken().Expect(TokenType.Int).Value); }
 
         ahead = _tokenizer.LookAhead().Expect(TokenType.Word, TokenType.EOF, TokenType.SemiColon);
+        if (ahead.Is("FOR"))    { _tokenizer.ReadToken(); _tokenizer.ReadToken().Expect("UPDATE"); query.ForUpdate = true; }
 
-        if (ahead.Is("FOR"))
-        {
-            // read FOR keyword
-            _tokenizer.ReadToken();
-            _tokenizer.ReadToken().Expect("UPDATE");
-
-            query.ForUpdate = true;
-        }
-
-        // read eof/;
         _tokenizer.ReadToken().Expect(TokenType.EOF, TokenType.SemiColon);
 
-        return _engine.Query(collection, query);
+        var stream = _engine.Query(collection, query, cancellationToken);
+        return new BsonDataReader(stream, collection, cancellationToken);
     }
 
     /// <summary>

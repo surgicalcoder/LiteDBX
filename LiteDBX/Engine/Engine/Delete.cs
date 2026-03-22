@@ -55,22 +55,21 @@ public partial class LiteEngine
     /// <summary>
     /// Implements delete based on filter expression
     /// </summary>
-    public ValueTask<int> DeleteMany(string collection, BsonExpression predicate, CancellationToken cancellationToken = default)
+    public async ValueTask<int> DeleteMany(string collection, BsonExpression predicate, CancellationToken cancellationToken = default)
     {
         if (collection.IsNullOrWhiteSpace()) throw new ArgumentNullException(nameof(collection));
 
-        // Phase 2 bridge: collect IDs via sync query, then delete by ID.
         var ids = new List<BsonValue>();
         var q = new Query();
         if (predicate != null) q.Where.Add(predicate);
 
         var executor = new QueryExecutor(this, _state, _monitor, _sortDisk, _disk, _header.Pragmas, collection, q, null);
-        using var reader = executor.ExecuteQuery();
-        while (reader.ReadSync())
+
+        await foreach (var doc in executor.ExecuteQuery(cancellationToken).ConfigureAwait(false))
         {
-            ids.Add(reader.Current.AsDocument["_id"]);
+            ids.Add(doc["_id"]);
         }
 
-        return Delete(collection, ids, cancellationToken);
+        return await Delete(collection, ids, cancellationToken).ConfigureAwait(false);
     }
 }
