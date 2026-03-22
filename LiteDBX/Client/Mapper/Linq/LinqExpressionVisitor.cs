@@ -25,6 +25,7 @@ internal class LinqExpressionVisitor : ExpressionVisitor
         [typeof(double)] = new NumberResolver("DOUBLE"),
         [typeof(ICollection)] = new ICollectionResolver(),
         [typeof(Enumerable)] = new EnumerableResolver(),
+        [typeof(MemoryExtensions)] = new EnumerableResolver(),
         [typeof(Guid)] = new GuidResolver(),
         [typeof(Math)] = new MathResolver(),
         [typeof(Regex)] = new RegexResolver(),
@@ -184,6 +185,14 @@ internal class LinqExpressionVisitor : ExpressionVisitor
     /// </summary>
     protected override Expression VisitMethodCall(MethodCallExpression node)
     {
+        // handle implicit conversion operators (e.g. int[] → ReadOnlySpan<int>) by
+        // transparently visiting the underlying operand — the cast is a no-op for BsonExpression
+        if (node.Method.Name == "op_Implicit" && node.Arguments.Count == 1)
+        {
+            Visit(node.Arguments[0]);
+            return node;
+        }
+
         // if special method for index access, eval index value (do not use parameters)
         if (IsMethodIndexEval(node, out var obj, out var idx))
         {
