@@ -1,7 +1,7 @@
 ﻿<Solution>
-  <Project Path="LiteDBX.Benchmarks\LiteDBX.Benchmarks.csproj" />
-  <Project Path="LiteDBX.Shell\LiteDBX.Shell.csproj" />
-  <Project Path="LiteDBX.Stress\LiteDBX.Stress.csproj" />
-  <Project Path="LiteDBX.Tests\LiteDBX.Tests.csproj" />
-  <Project Path="LiteDBX\LiteDBX.csproj" />
+    <Project Path="LiteDBX.Benchmarks\LiteDBX.Benchmarks.csproj"/>
+    <Project Path="LiteDBX.Shell\LiteDBX.Shell.csproj"/>
+    <Project Path="LiteDBX.Stress\LiteDBX.Stress.csproj"/>
+    <Project Path="LiteDBX.Tests\LiteDBX.Tests.csproj"/>
+    <Project Path="LiteDBX\LiteDBX.csproj"/>
 </Solution>
