@@ -1,144 +1,16 @@
-﻿using System;
-using System.IO;
-using static LiteDbX.Constants;
-
-namespace LiteDbX;
-
-public partial class LiteFileStream<TFileId> : Stream
-{
-    /// <summary>
-    /// Number of bytes on each chunk document to store
-    /// </summary>
-    public const int MAX_CHUNK_SIZE = 255 * 1024; // 255kb like GridFS
-
-    private readonly ILiteCollection<BsonDocument> _chunks;
-    private readonly BsonValue _fileId;
-
-    private readonly ILiteCollection<LiteFileInfo<TFileId>> _files;
-    private readonly FileAccess _mode;
-    private MemoryStream _buffer;
-    private byte[] _currentChunkData;
-    private int _currentChunkIndex;
-    private int _positionInChunk;
-
-    private long _streamPosition;
-
-    internal LiteFileStream(ILiteCollection<LiteFileInfo<TFileId>> files, ILiteCollection<BsonDocument> chunks, LiteFileInfo<TFileId> file, BsonValue fileId, FileAccess mode)
-    {
-        _files = files;
-        _chunks = chunks;
-        FileInfo = file;
-        _fileId = fileId;
-        _mode = mode;
-
-        if (mode == FileAccess.Read)
-        {
-            // initialize first data block
-            _currentChunkData = GetChunkData(_currentChunkIndex);
-        }
-        else if (mode == FileAccess.Write)
-        {
-            _buffer = new MemoryStream(MAX_CHUNK_SIZE);
-
-            if (FileInfo.Length > 0)
-            {
-                // delete all chunks before re-write
-                var count = _chunks.DeleteMany("_id BETWEEN { f: @0, n: 0 } AND { f: @0, n: 99999999 }", _fileId);
-
-                ENSURE(count == FileInfo.Chunks);
-
-                // clear file content length+chunks
-                FileInfo.Length = 0;
-                FileInfo.Chunks = 0;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Get file information
-    /// </summary>
-    public LiteFileInfo<TFileId> FileInfo { get; }
-
-    public override long Length => FileInfo.Length;
-
-    public override bool CanRead => _mode == FileAccess.Read;
-
-    public override bool CanWrite => _mode == FileAccess.Write;
-
-    public override bool CanSeek => _mode == FileAccess.Read;
-
-    public override long Position
-    {
-        get => _streamPosition;
-        set
-        {
-            if (_mode == FileAccess.Read)
-            {
-                SetReadStreamPosition(value);
-            }
-            else
-            {
-                throw new NotSupportedException();
-            }
-        }
-    }
-
-    public override long Seek(long offset, SeekOrigin origin)
-    {
-        if (_mode == FileAccess.Write)
-        {
-            throw new NotSupportedException();
-        }
-
-        switch (origin)
-        {
-            case SeekOrigin.Begin:
-                SetReadStreamPosition(offset);
-
-                break;
-            case SeekOrigin.Current:
-                SetReadStreamPosition(_streamPosition + offset);
-
-                break;
-            case SeekOrigin.End:
-                SetReadStreamPosition(Length + offset);
-
-                break;
-        }
-
-        return _streamPosition;
-    }
-
-    #region Not supported operations
-
-    public override void SetLength(long value)
-    {
-        throw new NotSupportedException();
-    }
-
-    #endregion
-
-    #region Dispose
-
-    private bool _disposed;
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (disposing && CanWrite)
-        {
-            Flush();
-            _buffer?.Dispose();
-        }
-
-        _disposed = true;
-    }
-
-    #endregion
-}
+﻿// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 5 — FILE STORAGE REDESIGN
+// ─────────────────────────────────────────────────────────────────────────────
+// LiteFileStream<TFileId> has been removed as part of the async-only redesign.
+//
+// Reason: LiteFileStream<TFileId> inherited from System.IO.Stream, which requires
+// implementation of synchronous Read(byte[], int, int), Write(byte[], int, int),
+// and Flush() methods.  These synchronous overrides violate the async-only contract.
+//
+// Replacement: LiteFileHandle<TFileId> implements ILiteFileHandle<TFileId>, which
+// exposes only async operations (Read, Write, Flush, Seek, DisposeAsync).
+// It is created internally by LiteStorage<TFileId>.OpenRead() / OpenWrite().
+//
+// Public surface: ILiteFileHandle<TFileId> (see ILiteFileHandle.cs)
+//                 ILiteStorage<TFileId>     (see ILiteStorage.cs)
+// ─────────────────────────────────────────────────────────────────────────────

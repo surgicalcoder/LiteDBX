@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 
@@ -23,67 +23,70 @@ public class Storage_Tests
         _rnd.NextBytes(_smallFile);
         _rnd.NextBytes(_bigFile);
 
-        _smallHash = HashFile(_smallFile);
-        _bigHash = HashFile(_bigFile);
+        _smallHash = HashBytes(_smallFile);
+        _bigHash = HashBytes(_bigFile);
     }
 
     [Fact]
-    public void Storage_Upload_Download()
+    public async Task Storage_Upload_Download()
     {
-        using (var f = new TempFile())
-        {
-            using (var db = new LiteDatabase(f.Filename))
-                //using (var db = new LiteDatabase(@"c:\temp\file.db"))
-            {
-                var fs = db.GetStorage<int>();
+        using var f = new TempFile();
+        await using var db = new LiteDatabase(f.Filename);
+        var fs = db.GetStorage<int>();
 
-                var small = fs.Upload(10, "photo_small.png", new MemoryStream(_smallFile));
-                var big = fs.Upload(100, "photo_big.png", new MemoryStream(_bigFile));
+        // ── Upload two files ──────────────────────────────────────────────────
+        var small = await fs.Upload(10, "photo_small.png", new MemoryStream(_smallFile));
+        var big   = await fs.Upload(100, "photo_big.png",  new MemoryStream(_bigFile));
 
-                _smallFile.Length.Should().Be((int)small.Length);
-                _bigFile.Length.Should().Be((int)big.Length);
+        _smallFile.Length.Should().Be((int)small.Length);
+        _bigFile.Length.Should().Be((int)big.Length);
 
-                var f0 = fs.Find(x => x.Filename == "photo_small.png").First();
-                var f1 = fs.Find(x => x.Filename == "photo_big.png").First();
+        // ── Find by predicate ─────────────────────────────────────────────────
+        LiteFileInfo<int> f0 = null, f1 = null;
 
-                HashFile(f0.OpenRead()).Should().Be(_smallHash);
-                HashFile(f1.OpenRead()).Should().Be(_bigHash);
+        await foreach (var file in fs.Find(x => x.Filename == "photo_small.png"))
+            f0 = file;
 
-                // now replace small content with big-content
-                var repl = fs.Upload(10, "new_photo.jpg", new MemoryStream(_bigFile));
+        await foreach (var file in fs.Find(x => x.Filename == "photo_big.png"))
+            f1 = file;
 
-                fs.Exists(10).Should().BeTrue();
+        f0.Should().NotBeNull();
+        f1.Should().NotBeNull();
 
-                var nrepl = fs.FindById(10);
+        // ── Verify content round-trip via Download ────────────────────────────
+        var smallMs = new MemoryStream();
+        await fs.Download(f0!.Id, smallMs);
+        HashBytes(smallMs.ToArray()).Should().Be(_smallHash);
 
-                nrepl.Chunks.Should().Be(repl.Chunks);
+        var bigMs = new MemoryStream();
+        await fs.Download(f1!.Id, bigMs);
+        HashBytes(bigMs.ToArray()).Should().Be(_bigHash);
 
-                // update metadata
-                fs.SetMetadata(100, new BsonDocument { ["x"] = 100, ["y"] = 99 });
+        // ── Overwrite small with big content ──────────────────────────────────
+        var repl = await fs.Upload(10, "new_photo.jpg", new MemoryStream(_bigFile));
 
-                // find using metadata
-                var md = fs.Find(x => x.Metadata["x"] == 100).FirstOrDefault();
+        (await fs.Exists(10)).Should().BeTrue();
 
-                md.Metadata["y"].AsInt32.Should().Be(99);
-            }
-        }
+        var nrepl = await fs.FindById(10);
+        nrepl.Chunks.Should().Be(repl.Chunks);
+
+        // ── Update and find by metadata ───────────────────────────────────────
+        await fs.SetMetadata(100, new BsonDocument { ["x"] = 100, ["y"] = 99 });
+
+        LiteFileInfo<int> md = null;
+        await foreach (var file in fs.Find(x => x.Metadata["x"] == 100))
+            md = file;
+
+        md.Should().NotBeNull();
+        md!.Metadata["y"].AsInt32.Should().Be(99);
     }
 
-    private string HashFile(Stream stream)
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static string HashBytes(byte[] input)
     {
-        var m = new MemoryStream();
-        stream.CopyTo(m);
-
-        return HashFile(m.ToArray());
-    }
-
-    private string HashFile(byte[] input)
-    {
-        using (var md5 = MD5.Create())
-        {
-            var bytes = md5.ComputeHash(input);
-
-            return Convert.ToBase64String(bytes);
-        }
+        using var md5 = MD5.Create();
+        return Convert.ToBase64String(md5.ComputeHash(input));
     }
 }
+

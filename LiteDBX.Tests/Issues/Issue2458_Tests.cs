@@ -1,56 +1,72 @@
 ﻿using System;
-using System.IO;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
 
+/// <summary>
+/// Phase 5: migrated from sync Stream API to async ILiteFileHandle API.
+/// </summary>
 public class Issue2458_Tests
 {
     [Fact]
-    public void NegativeSeekFails()
+    public async Task NegativeSeekFails()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var fs = db.FileStorage;
-        AddTestFile("test", 1, fs);
-        using Stream stream = fs.OpenRead("test");
-        Assert.Throws<ArgumentOutOfRangeException>(() => stream.Position = -1);
+        await AddTestFile("test", 1, fs);
+
+        await using var handle = await fs.OpenRead("test");
+        // Seek(-1) must throw ArgumentOutOfRangeException
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => handle.Seek(-1).AsTask());
     }
 
-    //https://learn.microsoft.com/en-us/dotnet/api/system.io.stream.position?view=net-8.0 says seeking to a position
-    //beyond the end of a stream is supported, so implementations should support it (error on read).
+    // https://learn.microsoft.com/en-us/dotnet/api/system.io.stream.position?view=net-8.0
+    // says seeking past the end is supported — error occurs on read, not on seek.
     [Fact]
-    public void SeekPastFileSucceds()
+    public async Task SeekPastFileSucceeds()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var fs = db.FileStorage;
-        AddTestFile("test", 1, fs);
-        using Stream stream = fs.OpenRead("test");
-        stream.Position = int.MaxValue;
+        await AddTestFile("test", 1, fs);
+
+        await using var handle = await fs.OpenRead("test");
+        // Should not throw; position is clamped to Length.
+        await handle.Seek(int.MaxValue);
     }
 
     [Fact]
-    public void SeekShortChunks()
+    public async Task SeekShortChunks()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var fs = db.FileStorage;
 
-        using (Stream writeStream = fs.OpenWrite("test", "test"))
+        // Write three single-byte flushes to produce (at most) three separate buffered regions.
+        await using (var writer = await fs.OpenWrite("test", "test"))
         {
-            writeStream.WriteByte(0);
-            writeStream.Flush(); //Create single-byte chunk just containing a 0
-            writeStream.WriteByte(1);
-            writeStream.Flush();
-            writeStream.WriteByte(2);
-        }
+            await writer.Write(new byte[] { 0 }.AsMemory());
+            await writer.Flush();
+            await writer.Write(new byte[] { 1 }.AsMemory());
+            await writer.Flush();
+            await writer.Write(new byte[] { 2 }.AsMemory());
+        } // DisposeAsync calls Flush, committing the final byte and upserting metadata.
 
-        using Stream readStream = fs.OpenRead("test");
-        readStream.Position = 2;
-        Assert.Equal(2, readStream.ReadByte());
+        await using var reader = await fs.OpenRead("test");
+        await reader.Seek(2);
+
+        var buf = new byte[1];
+        var read = await reader.Read(buf.AsMemory());
+        Assert.Equal(1, read);
+        Assert.Equal(2, buf[0]);
     }
 
-    private void AddTestFile(string id, long length, ILiteStorage<string> fs)
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static async Task AddTestFile(string id, long length, ILiteStorage<string> fs)
     {
-        using Stream writeStream = fs.OpenWrite(id, id);
-        writeStream.Write(new byte[length]);
+        await using var writer = await fs.OpenWrite(id, id);
+        await writer.Write(new byte[length].AsMemory());
     }
 }
+

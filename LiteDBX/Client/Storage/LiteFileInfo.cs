@@ -1,93 +1,52 @@
 ﻿using System;
-using System.IO;
 
 namespace LiteDbX;
 
 /// <summary>
-/// Represents a file inside storage collection
+/// Metadata record for a file entry stored in LiteDB file storage.
+///
+/// Phase 5 redesign notes:
+/// ─────────────────────────────────────────────────────────────────────────────
+/// This class is now a plain data transfer object (POCO/DTO).  The former
+/// synchronous helper methods (<c>OpenRead</c>, <c>OpenWrite</c>, <c>CopyTo</c>,
+/// <c>SaveAs</c>) and the injected collection references (<c>_files</c>,
+/// <c>_chunks</c>, <c>_fileId</c>) have been removed because:
+///
+///   1. They required injecting <see cref="ILiteCollection{T}"/> references into a
+///      data object, creating a hidden dependency that is incompatible with the
+///      async-only contract.
+///   2. The operations those methods performed (open handles, copy data to a
+///      stream, save to disk) are now exposed as async methods on
+///      <see cref="ILiteStorage{TFileId}"/> and <see cref="ILiteFileHandle{TFileId}"/>,
+///      which is the correct home for them in the redesigned API.
+/// ─────────────────────────────────────────────────────────────────────────────
 /// </summary>
 public class LiteFileInfo<TFileId>
 {
-    private ILiteCollection<BsonDocument> _chunks;
-
-    // database instances references
-    private BsonValue _fileId;
-    private ILiteCollection<LiteFileInfo<TFileId>> _files;
+    /// <summary>File identifier (typically a <see cref="string"/> or <see cref="ObjectId"/>).</summary>
     public TFileId Id { get; internal set; }
 
+    /// <summary>Original filename including extension.</summary>
     [BsonField("filename")]
     public string Filename { get; internal set; }
 
+    /// <summary>MIME content type derived from the filename extension at upload time.</summary>
     [BsonField("mimeType")]
     public string MimeType { get; internal set; }
 
+    /// <summary>Total byte length of the file content.</summary>
     [BsonField("length")]
     public long Length { get; internal set; } = 0;
 
+    /// <summary>Number of chunk documents that store the file content.</summary>
     [BsonField("chunks")]
     public int Chunks { get; internal set; } = 0;
 
+    /// <summary>Date and time (UTC) when the file was last written.</summary>
     [BsonField("uploadDate")]
-    public DateTime UploadDate { get; internal set; } = DateTime.Now;
+    public DateTime UploadDate { get; internal set; } = DateTime.UtcNow;
 
+    /// <summary>User-supplied metadata document.  Defaults to an empty document.</summary>
     [BsonField("metadata")]
-    public BsonDocument Metadata { get; set; } = new();
-
-    internal void SetReference(BsonValue fileId, ILiteCollection<LiteFileInfo<TFileId>> files, ILiteCollection<BsonDocument> chunks)
-    {
-        _fileId = fileId;
-        _files = files;
-        _chunks = chunks;
-    }
-
-    /// <summary>
-    /// Open file stream to read from database
-    /// </summary>
-    public LiteFileStream<TFileId> OpenRead()
-    {
-        return new LiteFileStream<TFileId>(_files, _chunks, this, _fileId, FileAccess.Read);
-    }
-
-    /// <summary>
-    /// Open file stream to write to database
-    /// </summary>
-    public LiteFileStream<TFileId> OpenWrite()
-    {
-        return new LiteFileStream<TFileId>(_files, _chunks, this, _fileId, FileAccess.Write);
-    }
-
-    /// <summary>
-    /// Copy file content to another stream
-    /// </summary>
-    public void CopyTo(Stream stream)
-    {
-        if (stream == null)
-        {
-            throw new ArgumentNullException(nameof(stream));
-        }
-
-        using (var reader = OpenRead())
-        {
-            reader.CopyTo(stream);
-        }
-    }
-
-    /// <summary>
-    /// Save file content to a external file
-    /// </summary>
-    public void SaveAs(string filename, bool overwritten = true)
-    {
-        if (filename.IsNullOrWhiteSpace())
-        {
-            throw new ArgumentNullException(nameof(filename));
-        }
-
-        using (var file = File.Open(filename, overwritten ? FileMode.Create : FileMode.CreateNew))
-        {
-            using (var stream = OpenRead())
-            {
-                stream.CopyTo(file);
-            }
-        }
-    }
+    public BsonDocument Metadata { get; set; } = new BsonDocument();
 }
