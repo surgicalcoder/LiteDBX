@@ -32,8 +32,8 @@ public class Mapper_Tests
 
             await db.Execute($"update Test set Member = {{_id: 1, Name: null, _type: \"{typeName}\"}} where _id = 1");
 
-            var func = () => col.FindById(1);
-            func.Should().Throw<LiteException>();
+            var act = async () => await col.FindById(1);
+            await act.Should().ThrowAsync<LiteException>();
         }
     }
 

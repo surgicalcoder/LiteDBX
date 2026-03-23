@@ -573,19 +573,16 @@ internal class TransactionService : IDisposable
         // clean snapshots if there is no commit/rollback
         if (State == TransactionState.Active && _snapshots.Count > 0)
         {
-            // release writable snapshots
-            foreach (var snapshot in _snapshots.Values.Where(x => x.Mode == LockMode.Write))
+            foreach (var snapshot in _snapshots.Values)
             {
-                _disk.DiscardDirtyPages(snapshot.GetWritablePages(true, true).Select(x => x.Buffer));
-                _disk.DiscardCleanPages(snapshot.GetWritablePages(false, true).Select(x => x.Buffer));
-            }
+                if (snapshot.Mode == LockMode.Write)
+                {
+                    _disk.DiscardDirtyPages(snapshot.GetWritablePages(true, true).Select(x => x.Buffer));
+                    _disk.DiscardCleanPages(snapshot.GetWritablePages(false, true).Select(x => x.Buffer));
+                }
 
-            // release buffers in read-only snapshots
-            foreach (var snapshot in _snapshots.Values.Where(x => x.Mode == LockMode.Read))
-            {
-                foreach (var page in snapshot.LocalPages)
-                    page.Buffer.Release();
-                snapshot.CollectionPage?.Buffer.Release();
+                // Always dispose snapshots so write snapshots release collection locks.
+                snapshot.Dispose();
             }
         }
 
