@@ -55,45 +55,45 @@ internal class RebuildService
         var backupLogFilename = FileHelper.GetSuffixFile(FileHelper.GetLogFile(_settings.Filename), "-backup");
         var tempFilename      = FileHelper.GetSuffixFile(_settings.Filename);
 
-        await using var reader = _fileVersion == 7
+        // Keep rebuild work in a nested scope so all file handles are closed before swapping files.
+        await using (var reader = _fileVersion == 7
             ? (IFileReader)new FileReaderV7(_settings)
-            : new FileReaderV8(_settings, options.Errors);
-
-        reader.Open();
-
-        await using var engine = new LiteEngine(new EngineSettings
+            : new FileReaderV8(_settings, options.Errors))
         {
-            Filename   = tempFilename,
-            Collation  = options.Collation,
-            Password   = options.Password
-        });
+            reader.Open();
 
-        // Disable checkpoint during rebuild so log pages accumulate.
-        await engine.Pragma(Pragmas.CHECKPOINT, 0, cancellationToken).ConfigureAwait(false);
+            await using var engine = new LiteEngine(new EngineSettings
+            {
+                Filename   = tempFilename,
+                Collation  = options.Collation,
+                Password   = options.Password
+            });
 
-        // Copy all content from the reader into the new engine (truly async).
-        await engine.RebuildContentAsync(reader, cancellationToken).ConfigureAwait(false);
+            // Disable checkpoint during rebuild so log pages accumulate.
+            await engine.Pragma(Pragmas.CHECKPOINT, 0, cancellationToken).ConfigureAwait(false);
 
-        // Insert error report if requested.
-        if (options.IncludeErrorReport && options.Errors.Count > 0)
-        {
-            var report = options.GetErrorReport();
-            await engine.Insert("_rebuild_errors", report, BsonAutoId.Int32, cancellationToken)
-                        .ConfigureAwait(false);
+            // Copy all content from the reader into the new engine (truly async).
+            await engine.RebuildContentAsync(reader, cancellationToken).ConfigureAwait(false);
+
+            // Insert error report if requested.
+            if (options.IncludeErrorReport && options.Errors.Count > 0)
+            {
+                var report = options.GetErrorReport();
+                await engine.Insert("_rebuild_errors", report, BsonAutoId.Int32, cancellationToken)
+                            .ConfigureAwait(false);
+            }
+
+            // Restore pragmas from the source file.
+            var pragmas = reader.GetPragmas();
+            await engine.Pragma(Pragmas.CHECKPOINT,  pragmas[Pragmas.CHECKPOINT],  cancellationToken).ConfigureAwait(false);
+            await engine.Pragma(Pragmas.TIMEOUT,     pragmas[Pragmas.TIMEOUT],     cancellationToken).ConfigureAwait(false);
+            await engine.Pragma(Pragmas.LIMIT_SIZE,  pragmas[Pragmas.LIMIT_SIZE],  cancellationToken).ConfigureAwait(false);
+            await engine.Pragma(Pragmas.UTC_DATE,    pragmas[Pragmas.UTC_DATE],    cancellationToken).ConfigureAwait(false);
+            await engine.Pragma(Pragmas.USER_VERSION,pragmas[Pragmas.USER_VERSION],cancellationToken).ConfigureAwait(false);
+
+            // Flush log into the data file.
+            await engine.Checkpoint(cancellationToken).ConfigureAwait(false);
         }
-
-        // Restore pragmas from the source file.
-        var pragmas = reader.GetPragmas();
-        await engine.Pragma(Pragmas.CHECKPOINT,  pragmas[Pragmas.CHECKPOINT],  cancellationToken).ConfigureAwait(false);
-        await engine.Pragma(Pragmas.TIMEOUT,     pragmas[Pragmas.TIMEOUT],     cancellationToken).ConfigureAwait(false);
-        await engine.Pragma(Pragmas.LIMIT_SIZE,  pragmas[Pragmas.LIMIT_SIZE],  cancellationToken).ConfigureAwait(false);
-        await engine.Pragma(Pragmas.UTC_DATE,    pragmas[Pragmas.UTC_DATE],    cancellationToken).ConfigureAwait(false);
-        await engine.Pragma(Pragmas.USER_VERSION,pragmas[Pragmas.USER_VERSION],cancellationToken).ConfigureAwait(false);
-
-        // Flush log into the data file.
-        await engine.Checkpoint(cancellationToken).ConfigureAwait(false);
-
-        // engine and reader are disposed here (await using)
 
         return SwapFiles(_settings.Filename, tempFilename, backupFilename, backupLogFilename);
     }
@@ -117,38 +117,40 @@ internal class RebuildService
         var backupLogFilename = FileHelper.GetSuffixFile(FileHelper.GetLogFile(_settings.Filename), "-backup");
         var tempFilename      = FileHelper.GetSuffixFile(_settings.Filename);
 
-        using var reader = _fileVersion == 7
+        // Keep rebuild work in a nested scope so all file handles are closed before swapping files.
+        using (var reader = _fileVersion == 7
             ? (IFileReader)new FileReaderV7(_settings)
-            : new FileReaderV8(_settings, options.Errors);
-
-        reader.Open();
-
-        using var engine = new LiteEngine(new EngineSettings
+            : new FileReaderV8(_settings, options.Errors))
         {
-            Filename   = tempFilename,
-            Collation  = options.Collation,
-            Password   = options.Password
-        });
+            reader.Open();
 
-        // Phase 6 deferred: sync-over-async on the constructor path only.
-        engine.Pragma(Pragmas.CHECKPOINT, 0).GetAwaiter().GetResult();
+            using var engine = new LiteEngine(new EngineSettings
+            {
+                Filename   = tempFilename,
+                Collation  = options.Collation,
+                Password   = options.Password
+            });
 
-        engine.RebuildContent(reader);
+            // Phase 6 deferred: sync-over-async on the constructor path only.
+            engine.Pragma(Pragmas.CHECKPOINT, 0).GetAwaiter().GetResult();
 
-        if (options.IncludeErrorReport && options.Errors.Count > 0)
-        {
-            var report = options.GetErrorReport();
-            engine.Insert("_rebuild_errors", report, BsonAutoId.Int32).GetAwaiter().GetResult();
+            engine.RebuildContent(reader);
+
+            if (options.IncludeErrorReport && options.Errors.Count > 0)
+            {
+                var report = options.GetErrorReport();
+                engine.Insert("_rebuild_errors", report, BsonAutoId.Int32).GetAwaiter().GetResult();
+            }
+
+            var pragmas = reader.GetPragmas();
+            engine.Pragma(Pragmas.CHECKPOINT,  pragmas[Pragmas.CHECKPOINT]).GetAwaiter().GetResult();
+            engine.Pragma(Pragmas.TIMEOUT,     pragmas[Pragmas.TIMEOUT]).GetAwaiter().GetResult();
+            engine.Pragma(Pragmas.LIMIT_SIZE,  pragmas[Pragmas.LIMIT_SIZE]).GetAwaiter().GetResult();
+            engine.Pragma(Pragmas.UTC_DATE,    pragmas[Pragmas.UTC_DATE]).GetAwaiter().GetResult();
+            engine.Pragma(Pragmas.USER_VERSION,pragmas[Pragmas.USER_VERSION]).GetAwaiter().GetResult();
+
+            engine.Checkpoint().GetAwaiter().GetResult();
         }
-
-        var pragmas = reader.GetPragmas();
-        engine.Pragma(Pragmas.CHECKPOINT,  pragmas[Pragmas.CHECKPOINT]).GetAwaiter().GetResult();
-        engine.Pragma(Pragmas.TIMEOUT,     pragmas[Pragmas.TIMEOUT]).GetAwaiter().GetResult();
-        engine.Pragma(Pragmas.LIMIT_SIZE,  pragmas[Pragmas.LIMIT_SIZE]).GetAwaiter().GetResult();
-        engine.Pragma(Pragmas.UTC_DATE,    pragmas[Pragmas.UTC_DATE]).GetAwaiter().GetResult();
-        engine.Pragma(Pragmas.USER_VERSION,pragmas[Pragmas.USER_VERSION]).GetAwaiter().GetResult();
-
-        engine.Checkpoint().GetAwaiter().GetResult();
 
         return SwapFiles(_settings.Filename, tempFilename, backupFilename, backupLogFilename);
     }
@@ -169,11 +171,24 @@ internal class RebuildService
 
         if (File.Exists(logFile))
         {
-            File.Move(logFile, backupLog);
+            FileHelper.Exec(5, () =>
+            {
+                if (File.Exists(backupLog)) File.Delete(backupLog);
+                File.Move(logFile, backupLog);
+            });
         }
 
-        FileHelper.Exec(5, () => File.Move(original, backup));
-        File.Move(temp, original);
+        FileHelper.Exec(5, () =>
+        {
+            if (File.Exists(backup)) File.Delete(backup);
+            File.Move(original, backup);
+        });
+
+        FileHelper.Exec(5, () =>
+        {
+            if (File.Exists(original)) File.Delete(original);
+            File.Move(temp, original);
+        });
 
         return new FileInfo(backup).Length - new FileInfo(original).Length;
     }
