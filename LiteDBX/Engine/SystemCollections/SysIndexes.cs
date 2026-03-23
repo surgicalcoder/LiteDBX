@@ -6,8 +6,8 @@ public partial class LiteEngine
 {
     private IEnumerable<BsonDocument> SysIndexes()
     {
-        // get any transaction from current thread ID
-        var transaction = _monitor.GetThreadTransaction();
+        // get the transaction that is currently driving this query context
+        var transaction = _monitor.GetCurrentTransaction();
 
         foreach (var collection in _header.GetCollections())
         {

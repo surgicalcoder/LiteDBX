@@ -1,16 +1,16 @@
 ﻿using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace LiteDbX;
 
 internal static class IOExceptionExtensions
 {
     private const int ERROR_SHARING_VIOLATION = 32;
-    private const int ERROR_LOCK_VIOLATION = 33;
+    private const int ERROR_LOCK_VIOLATION    = 33;
 
     /// <summary>
-    /// Detect if exception is an Locked exception
+    /// Returns <c>true</c> if the exception is a file-locking error.
     /// </summary>
     public static bool IsLocked(this IOException ex)
     {
@@ -22,7 +22,14 @@ internal static class IOExceptionExtensions
     }
 
     /// <summary>
-    /// Wait current thread for N milliseconds if exception is about Locking
+    /// Blocks the calling thread for <paramref name="timerInMilliseconds"/> ms if the
+    /// exception is a file-locking error; rethrows for any other exception.
+    ///
+    /// Phase 6: replaced <c>Task.Delay(...).Wait()</c> with <c>Thread.Sleep()</c>.
+    /// <c>Task.Delay().Wait()</c> misuses the async machinery for a deliberately
+    /// synchronous delay inside a sync retry loop (<see cref="FileHelper.TryExec"/>
+    /// / <see cref="FileHelper.Exec"/>). Blocking the thread is intentional in that
+    /// context — <c>Thread.Sleep</c> is the correct primitive.
     /// </summary>
     public static void WaitIfLocked(this IOException ex, int timerInMilliseconds)
     {
@@ -30,7 +37,7 @@ internal static class IOExceptionExtensions
         {
             if (timerInMilliseconds > 0)
             {
-                Task.Delay(timerInMilliseconds).Wait();
+                Thread.Sleep(timerInMilliseconds);
             }
         }
         else

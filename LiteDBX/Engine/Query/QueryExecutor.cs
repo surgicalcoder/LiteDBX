@@ -83,6 +83,12 @@ internal class QueryExecutor
     /// <summary>
     /// Acquire a transaction (async, non-blocking), execute the synchronous CPU pipeline,
     /// and release the transaction when enumeration is complete or abandoned.
+    ///
+    /// Phase 6: <see cref="TransactionMonitor.SetCurrentTransaction"/> is called before
+    /// the pipeline so that system collections executed as a source (e.g. <c>$dump</c>,
+    /// <c>$indexes</c>, <c>$page_list</c>) can retrieve the running transaction via
+    /// <see cref="TransactionMonitor.GetCurrentTransaction"/> instead of the removed
+    /// thread-local <c>GetThreadTransaction()</c>.
     /// </summary>
     private async IAsyncEnumerable<BsonDocument> ExecuteQueryCore(
         bool executionPlan,
@@ -91,6 +97,9 @@ internal class QueryExecutor
         var (transaction, isNew) = await _monitor
             .GetOrCreateTransactionAsync(true, cancellationToken)
             .ConfigureAwait(false);
+
+        // Publish the transaction to synchronous system-collection sources running in this context.
+        TransactionMonitor.SetCurrentTransaction(transaction);
 
         transaction.OpenCursors.Add(_cursor);
 
@@ -104,6 +113,7 @@ internal class QueryExecutor
         }
         finally
         {
+            TransactionMonitor.SetCurrentTransaction(null);
             transaction.OpenCursors.Remove(_cursor);
 
             if (isNew)

@@ -9,7 +9,12 @@ public partial class LiteEngine
     private static readonly ArrayPool<byte> _bufferPool = ArrayPool<byte>.Shared;
 
     /// <summary>
-    /// If Upgrade=true, run this before open Disk service
+    /// Detect and upgrade a v7 datafile to the current format before the disk service opens.
+    ///
+    /// Phase 6 deferred: <c>TryUpgrade()</c> is called synchronously from <c>Open()</c>
+    /// (constructor path). The file detection read and the subsequent <c>Recovery()</c>
+    /// call both run on the calling thread. Replacing this with an async upgrade path
+    /// requires the Phase 7 async-factory constructor (<c>LiteEngine.OpenAsync()</c>).
     /// </summary>
     private void TryUpgrade()
     {

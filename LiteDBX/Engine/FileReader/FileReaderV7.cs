@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using static LiteDbX.Constants;
 
 namespace LiteDbX.Engine;
@@ -185,6 +186,18 @@ internal class FileReaderV7 : IFileReader
     {
         Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Phase 6: <see cref="IAsyncDisposable"/> implementation so the async rebuild path
+    /// can use <c>await using</c>. Underlying streams have no async close, so this
+    /// delegates synchronously.
+    /// </summary>
+    public ValueTask DisposeAsync()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+        return default;
     }
 
     /// <summary>

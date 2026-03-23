@@ -12,10 +12,9 @@ namespace LiteDbX;
 /// Phase 4: Updated to implement the async <see cref="IBsonDataReader"/> contract
 /// (<see cref="Read"/> returning <c>ValueTask&lt;bool&gt;</c>, <see cref="DisposeAsync"/>).
 ///
-/// Phase 6 note: The <see cref="SharedEngine"/> mutex acquisition/release strategy
-/// is deferred to Phase 6 (Shared Mode redesign). The dispose callback invoked here
-/// still releases the mutex synchronously inside the async path. This is acceptable
-/// as a bridge until Phase 6 introduces async-safe shared-mode coordination.
+/// Phase 6: <see cref="SharedEngine"/> now uses <see cref="System.Threading.SemaphoreSlim.WaitAsync"/>
+/// instead of the blocking OS Mutex. The async dispose callback correctly releases
+/// the semaphore via <see cref="System.Threading.SemaphoreSlim.Release"/> without blocking threads.
 /// </summary>
 public class SharedDataReader : IBsonDataReader
 {

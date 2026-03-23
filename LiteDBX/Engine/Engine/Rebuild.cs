@@ -6,40 +6,34 @@ namespace LiteDbX.Engine;
 public partial class LiteEngine
 {
     /// <summary>
-    /// Implement a full rebuild database. Engine will be closed and re-created in another instance.
-    /// A backup copy will be created with -backup extension. All data will be read and re-created in
-    /// another database. After rebuild, the engine is re-opened.
+    /// Rebuild the database fully asynchronously.
     ///
-    /// Phase 2: signature updated to match <see cref="ILiteEngine.Rebuild(RebuildOptions, CancellationToken)"/>.
-    /// Phase 3 bridge: Close, RebuildService.Rebuild, and Open are all synchronous disk operations;
-    /// returns a completed <see cref="ValueTask{T}"/>. Phase 3 (Disk and Streams) will make this async.
+    /// Phase 6: uses <see cref="CloseAsync"/> and <see cref="RebuildService.RebuildAsync"/>
+    /// so no thread is blocked during the rebuild I/O. <c>Open()</c> after the rebuild
+    /// still runs synchronously (constructor limitation, deferred to Phase 7 async factory).
     /// </summary>
-    public ValueTask<long> Rebuild(RebuildOptions options, CancellationToken cancellationToken = default)
+    public async ValueTask<long> Rebuild(RebuildOptions options, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_settings.Filename))
         {
-            return new ValueTask<long>(0L); // works only with OS file
+            return 0L; // memory-only databases cannot be rebuilt via file replacement
         }
 
-        Close();
+        await CloseAsync().ConfigureAwait(false);
 
         var rebuilder = new RebuildService(_settings);
+        var diff = await rebuilder.RebuildAsync(options, cancellationToken).ConfigureAwait(false);
 
-        // Phase 3 bridge: rebuild is still synchronous disk I/O.
-        var diff = rebuilder.Rebuild(options);
-
+        // Phase 6 deferred: Open() remains synchronous (called from constructor).
+        // A static OpenAsync() factory will allow this to be fully async in Phase 7.
         Open();
         _state.Disposed = false;
 
-        return new ValueTask<long>(diff);
+        return diff;
     }
 
     /// <summary>
     /// Convenience overload: rebuild using current collation and password settings.
-    /// Not part of <see cref="ILiteEngine"/> — additional helper on <see cref="LiteEngine"/>.
-    ///
-    /// Phase 3 bridge: reads collation directly from <see cref="HeaderPage.Pragmas"/> (synchronous)
-    /// to avoid sync-over-async. Phase 3 will unify this with the main async overload.
     /// </summary>
     public ValueTask<long> Rebuild(CancellationToken cancellationToken = default)
     {
@@ -49,31 +43,31 @@ public partial class LiteEngine
         return Rebuild(new RebuildOptions { Password = password, Collation = collation }, cancellationToken);
     }
 
+    // ── Async content rebuild (Phase 6 primary path) ──────────────────────────
+
     /// <summary>
-    /// Fill current database with data inside file reader — runs inside a transaction.
-    /// Called exclusively by <see cref="RebuildService.Rebuild"/>.
+    /// Copy all documents and indexes from <paramref name="reader"/> into the engine,
+    /// using the async transaction entry point.
     ///
-    /// Phase 3 bridge: all transaction and disk operations here are synchronous.
-    /// Documents are inserted per-collection in a dedicated transaction; indexes are created
-    /// afterwards via separate auto-transactions (one per index).  This avoids nesting a
-    /// second transaction acquisition inside the outer doc-insert transaction, which was
-    /// possible in the old thread-local model but is not safe with the async model.
-    ///
-    /// The per-collection transaction approach is functionally equivalent and slightly more
-    /// memory-efficient for large data sets.
+    /// Phase 6: replaces the Phase 3 bridge that used
+    /// <c>GetOrCreateTransactionSync</c> and <c>EnsureIndex(...).GetAwaiter().GetResult()</c>.
+    /// All transaction acquisition and index creation are now genuinely awaited.
     /// </summary>
-    internal void RebuildContent(IFileReader reader)
+    internal async ValueTask RebuildContentAsync(
+        IFileReader reader,
+        CancellationToken cancellationToken = default)
     {
         foreach (var collection in reader.GetCollections())
         {
-            // Phase 3 bridge: synchronous transaction entry.
-            var transaction = _monitor.GetOrCreateTransactionSync(false, out _);
+            var (transaction, _) = await _monitor
+                .GetOrCreateTransactionAsync(false, cancellationToken)
+                .ConfigureAwait(false);
 
             try
             {
                 var snapshot = transaction.CreateSnapshot(LockMode.Write, collection, true);
-                var indexer = new IndexService(snapshot, _header.Pragmas.Collation, _disk.MAX_ITEMS_COUNT);
-                var data = new DataService(snapshot, _disk.MAX_ITEMS_COUNT);
+                var indexer  = new IndexService(snapshot, _header.Pragmas.Collation, _disk.MAX_ITEMS_COUNT);
+                var data     = new DataService(snapshot, _disk.MAX_ITEMS_COUNT);
 
                 foreach (var doc in reader.GetDocuments(collection))
                 {
@@ -95,9 +89,66 @@ public partial class LiteEngine
                 throw;
             }
 
-            // Index creation: each EnsureIndex creates its own auto-transaction.
-            // Phase 3 bridge: GetAwaiter().GetResult() is safe here because this code
-            // runs on a dedicated thread outside any async continuation.
+            // Each index is created in its own auto-transaction (Phase 6: truly async).
+            foreach (var index in reader.GetIndexes(collection))
+            {
+                await EnsureIndex(
+                    collection,
+                    index.Name,
+                    BsonExpression.Create(index.Expression),
+                    index.Unique,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // ── Sync content rebuild (constructor/Recovery path — Phase 6 deferred) ───
+
+    /// <summary>
+    /// Synchronous variant of <see cref="RebuildContentAsync"/>, used exclusively by
+    /// <see cref="RebuildService.Rebuild"/> which is called from the synchronous
+    /// <c>Recovery()</c> → <c>Open()</c> constructor path.
+    ///
+    /// Phase 6 deferred: still uses <c>GetOrCreateTransactionSync</c> and
+    /// <c>EnsureIndex(...).GetAwaiter().GetResult()</c> because this code runs
+    /// inside the synchronous constructor. Resolving this requires the async factory
+    /// (Phase 7).
+    ///
+    /// Do not call this method from any non-constructor site.
+    /// </summary>
+    internal void RebuildContent(IFileReader reader)
+    {
+        foreach (var collection in reader.GetCollections())
+        {
+            var transaction = _monitor.GetOrCreateTransactionSync(false, out _);
+
+            try
+            {
+                var snapshot = transaction.CreateSnapshot(LockMode.Write, collection, true);
+                var indexer  = new IndexService(snapshot, _header.Pragmas.Collation, _disk.MAX_ITEMS_COUNT);
+                var data     = new DataService(snapshot, _disk.MAX_ITEMS_COUNT);
+
+                foreach (var doc in reader.GetDocuments(collection))
+                {
+                    transaction.Safepoint();
+                    InsertDocument(snapshot, doc, BsonAutoId.ObjectId, indexer, data);
+                }
+
+                transaction.Commit();
+                _monitor.ReleaseTransaction(transaction);
+            }
+            catch
+            {
+                if (transaction.State == TransactionState.Active)
+                {
+                    transaction.Rollback();
+                }
+
+                _monitor.ReleaseTransaction(transaction);
+                throw;
+            }
+
+            // Phase 6 deferred: sync-over-async on the constructor path only.
             foreach (var index in reader.GetIndexes(collection))
             {
                 EnsureIndex(

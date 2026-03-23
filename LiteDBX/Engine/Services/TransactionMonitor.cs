@@ -217,17 +217,47 @@ internal class TransactionMonitor : IDisposable
         _locker.ExitTransaction();
     }
 
-    // ── System collection helper ──────────────────────────────────────────────
+    // ── Current-transaction ambient context ──────────────────────────────────
 
     /// <summary>
-    /// Returns the <see cref="TransactionService"/> for the current ambient context.
-    /// Used by system collections to attach to the running query transaction.
-    /// Returns <c>null</c> if no explicit transaction is active.
+    /// Tracks the <see cref="TransactionService"/> that is currently executing on the
+    /// active async call chain — covers both explicit (<see cref="LiteTransaction"/>) and
+    /// auto-transactions created by <see cref="QueryExecutor"/>.
+    ///
+    /// Phase 6: replaces the old thread-local <c>GetThreadTransaction()</c> pattern
+    /// (removed in Phase 2) for system collections that need to attach a read snapshot
+    /// to the transaction that is already running the surrounding query.
     /// </summary>
-    public TransactionService GetAmbientTransaction()
+    private static readonly AsyncLocal<TransactionService> _currentTransaction =
+        new AsyncLocal<TransactionService>();
+
+    /// <summary>
+    /// Set the transaction that is currently driving the async execution context.
+    /// Called by <see cref="QueryExecutor.ExecuteQueryCore"/> before the query pipeline
+    /// runs and cleared (<c>null</c>) after it completes.
+    /// </summary>
+    internal static void SetCurrentTransaction(TransactionService transaction)
     {
-        return LiteTransaction.CurrentAmbient?.Service;
+        _currentTransaction.Value = transaction;
     }
+
+    /// <summary>
+    /// Returns the <see cref="TransactionService"/> that is currently active on this
+    /// async execution context, or <c>null</c> if none has been set.
+    ///
+    /// Resolution order:
+    /// <list type="number">
+    ///   <item>Explicit ambient transaction (<see cref="LiteTransaction.CurrentAmbient"/>).</item>
+    ///   <item>Auto-transaction set by <see cref="SetCurrentTransaction"/>.</item>
+    /// </list>
+    /// </summary>
+    public TransactionService GetCurrentTransaction()
+    {
+        return LiteTransaction.CurrentAmbient?.Service ?? _currentTransaction.Value;
+    }
+
+    /// <summary>Legacy alias kept for call sites not yet updated.</summary>
+    public TransactionService GetAmbientTransaction() => GetCurrentTransaction();
 
     // ── Page budget helpers ───────────────────────────────────────────────────
 

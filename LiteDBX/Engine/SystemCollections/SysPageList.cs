@@ -20,8 +20,8 @@ internal class SysPageList : SystemCollection
     {
         var pageID = GetOption(options, "pageID");
 
-        // get any transaction from current thread ID
-        var transaction = _monitor.GetThreadTransaction();
+        // get the transaction that is currently driving this query context
+        var transaction = _monitor.GetCurrentTransaction();
         var snapshot = transaction.CreateSnapshot(LockMode.Read, "$", false);
 
         _collections = _header.GetCollections().ToDictionary(x => x.Value, x => x.Key);
