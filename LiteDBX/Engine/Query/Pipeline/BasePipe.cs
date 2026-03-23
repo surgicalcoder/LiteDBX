@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System;
 using static LiteDbX.Constants;
 
 namespace LiteDbX.Engine;
@@ -12,16 +13,24 @@ internal abstract class BasePipe
     protected readonly IDocumentLookup _lookup;
     protected readonly uint _maxItemsCount;
     protected readonly EnginePragmas _pragmas;
+    protected readonly Func<string, BsonValue, BsonValue> _readTransform;
     protected readonly SortDisk _tempDisk;
     protected readonly TransactionService _transaction;
 
-    public BasePipe(TransactionService transaction, IDocumentLookup lookup, SortDisk tempDisk, EnginePragmas pragmas, uint maxItemsCount)
+    public BasePipe(
+        TransactionService transaction,
+        IDocumentLookup lookup,
+        SortDisk tempDisk,
+        EnginePragmas pragmas,
+        uint maxItemsCount,
+        Func<string, BsonValue, BsonValue> readTransform)
     {
         _transaction = transaction;
         _lookup = lookup;
         _tempDisk = tempDisk;
         _pragmas = pragmas;
         _maxItemsCount = maxItemsCount;
+        _readTransform = readTransform;
     }
 
     /// <summary>
@@ -102,7 +111,7 @@ internal abstract class BasePipe
                 indexer = new IndexService(snapshot, _pragmas.Collation, _maxItemsCount);
                 data = new DataService(snapshot, _maxItemsCount);
 
-                lookup = new DatafileLookup(data, _pragmas.UtcDate, null);
+                lookup = new DatafileLookup(data, _pragmas.UtcDate, null, last, _readTransform);
 
                 index = snapshot.CollectionPage?.PK;
             }

@@ -196,7 +196,13 @@ internal class QueryExecutor
             snapshot.CollectionPage,
             new IndexService(snapshot, _pragmas.Collation, _disk.MAX_ITEMS_COUNT));
 
-        var pipe = queryPlan.GetPipe(transaction, snapshot, _sortDisk, _pragmas, _disk.MAX_ITEMS_COUNT);
+        var pipe = queryPlan.GetPipe(
+            transaction,
+            snapshot,
+            _sortDisk,
+            _pragmas,
+            _disk.MAX_ITEMS_COUNT,
+            _state.ReadTransform);
 
         using var _ = _cursor.Elapsed.StartDisposable();
 

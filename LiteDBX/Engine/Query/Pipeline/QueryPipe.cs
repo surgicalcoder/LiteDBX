@@ -8,8 +8,14 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal class QueryPipe : BasePipe
 {
-    public QueryPipe(TransactionService transaction, IDocumentLookup loader, SortDisk tempDisk, EnginePragmas pragmas, uint maxItemsCount)
-        : base(transaction, loader, tempDisk, pragmas, maxItemsCount) { }
+    public QueryPipe(
+        TransactionService transaction,
+        IDocumentLookup loader,
+        SortDisk tempDisk,
+        EnginePragmas pragmas,
+        uint maxItemsCount,
+        System.Func<string, BsonValue, BsonValue> readTransform)
+        : base(transaction, loader, tempDisk, pragmas, maxItemsCount, readTransform) { }
 
     /// <summary>
     /// Query Pipe order

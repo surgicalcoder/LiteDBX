@@ -8,8 +8,14 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal class GroupByPipe : BasePipe
 {
-    public GroupByPipe(TransactionService transaction, IDocumentLookup loader, SortDisk tempDisk, EnginePragmas pragmas, uint maxItemsCount)
-        : base(transaction, loader, tempDisk, pragmas, maxItemsCount) { }
+    public GroupByPipe(
+        TransactionService transaction,
+        IDocumentLookup loader,
+        SortDisk tempDisk,
+        EnginePragmas pragmas,
+        uint maxItemsCount,
+        System.Func<string, BsonValue, BsonValue> readTransform)
+        : base(transaction, loader, tempDisk, pragmas, maxItemsCount, readTransform) { }
 
     /// <summary>
     /// GroupBy Pipe Order

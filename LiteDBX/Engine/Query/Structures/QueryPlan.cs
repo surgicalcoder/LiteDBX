@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System;
 
 namespace LiteDbX.Engine;
 
@@ -182,20 +183,42 @@ internal class QueryPlan
     /// <summary>
     /// Select corrent pipe
     /// </summary>
-    public BasePipe GetPipe(TransactionService transaction, Snapshot snapshot, SortDisk tempDisk, EnginePragmas pragmas, uint maxItemsCount)
+    public BasePipe GetPipe(
+        TransactionService transaction,
+        Snapshot snapshot,
+        SortDisk tempDisk,
+        EnginePragmas pragmas,
+        uint maxItemsCount,
+        Func<string, BsonValue, BsonValue> readTransform)
     {
         if (GroupBy == null)
         {
-            return new QueryPipe(transaction, GetLookup(snapshot, pragmas, maxItemsCount), tempDisk, pragmas, maxItemsCount);
+            return new QueryPipe(
+                transaction,
+                GetLookup(snapshot, pragmas, maxItemsCount, readTransform),
+                tempDisk,
+                pragmas,
+                maxItemsCount,
+                readTransform);
         }
 
-        return new GroupByPipe(transaction, GetLookup(snapshot, pragmas, maxItemsCount), tempDisk, pragmas, maxItemsCount);
+        return new GroupByPipe(
+            transaction,
+            GetLookup(snapshot, pragmas, maxItemsCount, readTransform),
+            tempDisk,
+            pragmas,
+            maxItemsCount,
+            readTransform);
     }
 
     /// <summary>
     /// Get corrent IDocumentLookup
     /// </summary>
-    public IDocumentLookup GetLookup(Snapshot snapshot, EnginePragmas pragmas, uint maxItemsCount)
+    public IDocumentLookup GetLookup(
+        Snapshot snapshot,
+        EnginePragmas pragmas,
+        uint maxItemsCount,
+        Func<string, BsonValue, BsonValue> readTransform)
     {
         var data = new DataService(snapshot, maxItemsCount);
         var indexer = new IndexService(snapshot, pragmas.Collation, maxItemsCount);
@@ -210,7 +233,7 @@ internal class QueryPlan
             }
             else
             {
-                lookup = new DatafileLookup(data, pragmas.UtcDate, Fields);
+                lookup = new DatafileLookup(data, pragmas.UtcDate, Fields, Collection, readTransform);
             }
         }
 
