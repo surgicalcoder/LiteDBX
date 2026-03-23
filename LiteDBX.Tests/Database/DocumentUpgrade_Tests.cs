@@ -13,7 +13,7 @@ public class DocumentUpgrade_Tests
     {
         var ms = new MemoryStream();
 
-        using (var db = new LiteDatabase(ms))
+        await using (var db = new LiteDatabase(ms))
         {
             var col = db.GetCollection("col");
             await col.Insert(new BsonDocument { ["version"] = 1, ["_id"] = 1, ["name"] = "John" });
@@ -21,7 +21,7 @@ public class DocumentUpgrade_Tests
 
         ms.Position = 0;
 
-        using (var db = new LiteDatabase(ms))
+        await using (var db = new LiteDatabase(ms))
         {
             var col = db.GetCollection("col");
             (await col.Count()).Should().Be(1);
@@ -33,7 +33,7 @@ public class DocumentUpgrade_Tests
 
         ms.Position = 0;
 
-        using var engine = new LiteEngine(new EngineSettings
+        await using var engine = new LiteEngine(new EngineSettings
         {
             DataStream = ms,
             ReadTransform = (collectionName, val) =>
@@ -48,7 +48,7 @@ public class DocumentUpgrade_Tests
             }
         });
 
-        using (var db = new LiteDatabase(engine))
+        await using (var db = new LiteDatabase(engine, disposeOnClose: false))
         {
             var col = db.GetCollection("col");
             (await col.Count()).Should().Be(1);
@@ -64,7 +64,7 @@ public class DocumentUpgrade_Tests
     {
         var ms = new MemoryStream();
 
-        using (var db = new LiteDatabase(ms))
+        await using (var db = new LiteDatabase(ms))
         {
             var col = db.GetCollection("col");
             await col.Insert(new BsonDocument { ["version"] = 1, ["_id"] = 1, ["name"] = "John" });
@@ -72,7 +72,7 @@ public class DocumentUpgrade_Tests
 
         ms.Position = 0;
 
-        using (var db = new LiteDatabase(ms))
+        await using (var db = new LiteDatabase(ms))
         {
             var col = db.GetCollection("col");
             (await col.Count()).Should().Be(1);
@@ -96,7 +96,7 @@ public class DocumentUpgrade_Tests
             return doc;
         };
 
-        using (var db = new LiteDatabase(ms, mapper))
+        await using (var db = new LiteDatabase(ms, mapper))
         {
             var col = db.GetCollection("col");
             (await col.Count()).Should().Be(1);

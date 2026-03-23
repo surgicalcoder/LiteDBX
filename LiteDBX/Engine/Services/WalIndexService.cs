@@ -7,7 +7,7 @@ using static LiteDbX.Constants;
 namespace LiteDbX.Engine;
 
 /// <summary>
-/// Do all WAL index services based on LOG file — has only single instance per engine.
+/// Do all WAL index services based on LOG file - has only single instance per engine.
 /// [Singleton - ThreadSafe]
 ///
 /// Phase 3 changes:
@@ -341,7 +341,18 @@ internal class WalIndexService
                 buffer.Write(false, BasePage.P_IS_CONFIRMED);
                 buffer.Position = BasePage.GetPagePosition(pageID);
 
-                pagesToWrite.Add(buffer);
+                // ReadFullAsync reuses its internal byte[] between iterations.
+                // Clone bytes per page so queued checkpoint writes keep stable content.
+                var pageCopy = new PageBuffer(new byte[PAGE_SIZE], 0, 0)
+                {
+                    Position = buffer.Position,
+                    Origin = FileOrigin.Data,
+                    ShareCounter = 0
+                };
+
+                Buffer.BlockCopy(buffer.Array, buffer.Offset, pageCopy.Array, pageCopy.Offset, PAGE_SIZE);
+
+                pagesToWrite.Add(pageCopy);
                 counter++;
             }
         }
