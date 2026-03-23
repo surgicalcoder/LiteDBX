@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Xunit;
 using static LiteDbX.Tests.Issues.Issue1838_Tests;
 
@@ -8,26 +9,26 @@ public class Pull2468_Tests
 {
     // tests if lowerinvariant works
     [Fact]
-    public void Supports_LowerInvariant()
+    public async Task Supports_LowerInvariant()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "Abc",
             Timestamp = DateTimeOffset.UtcNow
         });
 
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "Def",
             Timestamp = DateTimeOffset.UtcNow
         });
 
-        var result = collection.Query()
-                               .Where(x => x.Foo.ToLowerInvariant() == "abc")
-                               .ToList();
+        var result = await collection.Query()
+                                     .Where(x => x.Foo.ToLowerInvariant() == "abc")
+                                     .ToList();
 
         Assert.NotNull(result);
         Assert.Single(result);
@@ -35,26 +36,26 @@ public class Pull2468_Tests
 
     // tests if upperinvariant works
     [Fact]
-    public void Supports_UpperInvariant()
+    public async Task Supports_UpperInvariant()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "Abc",
             Timestamp = DateTimeOffset.UtcNow
         });
 
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "Def",
             Timestamp = DateTimeOffset.UtcNow
         });
 
-        var result = collection.Query()
-                               .Where(x => x.Foo.ToUpperInvariant() == "ABC")
-                               .ToList();
+        var result = await collection.Query()
+                                     .Where(x => x.Foo.ToUpperInvariant() == "ABC")
+                                     .ToList();
 
         Assert.NotNull(result);
         Assert.Single(result);

@@ -1,13 +1,14 @@
-﻿using Xunit;
+﻿using System.Threading.Tasks;
+using Xunit;
 
 namespace LiteDbX.Tests.Issues;
 
 public class Issue2534_Tests
 {
     [Fact]
-    public void Test()
+    public async Task Test()
     {
-        using LiteDatabase database = new(new ConnectionString
+        await using LiteDatabase database = new(new ConnectionString
         {
             Filename = "Demo.db",
             Connection = ConnectionType.Shared
@@ -15,16 +16,16 @@ public class Issue2534_Tests
 
         var accounts = database.GetCollection("Issue2534");
 
-        if (accounts.Count() < 3)
+        if (await accounts.Count() < 3)
         {
-            accounts.Insert(new BsonDocument());
-            accounts.Insert(new BsonDocument());
-            accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
         }
 
-        foreach (var document in accounts.FindAll())
+        await foreach (var document in accounts.FindAll())
         {
-            accounts.Update(document);
+            await accounts.Update(document);
         }
     }
 }

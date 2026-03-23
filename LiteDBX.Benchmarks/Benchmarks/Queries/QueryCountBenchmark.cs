@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -12,46 +13,44 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
-
-            _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize)); // executed once per each N value
-
-            DatabaseInstance.Checkpoint();
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
+            await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
+            await DatabaseInstance.Checkpoint();
         }
 
         [Benchmark(Baseline = true)]
-        public int CountWithLinq()
+        public async Task<int> CountWithLinq()
         {
-            return _fileMetaCollection.Find(Query.EQ(nameof(FileMetaBase.ShouldBeShown), true)).Count();
+            return await _fileMetaCollection.Find(Query.EQ(nameof(FileMetaBase.ShouldBeShown), true)).CountAsync();
         }
 
         [Benchmark]
-        public int CountWithExpression()
+        public async Task<int> CountWithExpression()
         {
-            return _fileMetaCollection.Count(fileMeta => fileMeta.ShouldBeShown);
+            return await _fileMetaCollection.Count(fileMeta => fileMeta.ShouldBeShown);
         }
 
         [Benchmark]
-        public int CountWithQuery()
+        public async Task<int> CountWithQuery()
         {
-            return _fileMetaCollection.Count(Query.EQ(nameof(FileMetaBase.ShouldBeShown), true));
+            return await _fileMetaCollection.Count(Query.EQ(nameof(FileMetaBase.ShouldBeShown), true));
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            // Disposing logic
-            DatabaseInstance.DropCollection(nameof(FileMetaBase));
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.DropCollection(nameof(FileMetaBase));
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

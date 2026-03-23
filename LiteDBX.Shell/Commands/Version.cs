@@ -1,4 +1,6 @@
-﻿namespace LiteDbX.Shell.Commands;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell.Commands;
 
 [Help(
     Name = "version",
@@ -12,10 +14,11 @@ internal class Version : IShellCommand
         return s.Scan(@"ver(sion)?$").Length > 0;
     }
 
-    public void Execute(StringScanner s, Env env)
+    public ValueTask Execute(StringScanner s, Env env)
     {
         var assembly = typeof(ILiteDatabase).Assembly.GetName();
 
         env.Display.WriteLine(assembly.FullName);
+        return ValueTask.CompletedTask;
     }
 }

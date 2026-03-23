@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -13,72 +14,62 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
     {
         private DateTime _dateTimeConstraint;
         private BsonValue _dateTimeConstraintBsonValue;
-
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ValidFrom);
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ValidTo);
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
-
-            _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize)); // executed once per each N value
-
-            DatabaseInstance.Checkpoint();
-
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ValidFrom);
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ValidTo);
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
+            await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
+            await DatabaseInstance.Checkpoint();
             _dateTimeConstraint = DateTime.Now;
             _dateTimeConstraintBsonValue = new BsonValue(_dateTimeConstraint);
         }
 
         [Benchmark(Baseline = true)]
-        public List<FileMetaBase> Expression_Normal_Baseline()
-        {
-            return _fileMetaCollection.Find(fileMeta =>
-                (fileMeta.ValidFrom > _dateTimeConstraint || fileMeta.ValidTo < _dateTimeConstraint) && fileMeta.ShouldBeShown).ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Expression_Normal_Baseline()
+            => _fileMetaCollection.Find(fileMeta =>
+                (fileMeta.ValidFrom > _dateTimeConstraint || fileMeta.ValidTo < _dateTimeConstraint) && fileMeta.ShouldBeShown)
+                .ToListAsync();
 
         [Benchmark]
-        public List<FileMetaBase> Query_Normal()
-        {
-            return _fileMetaCollection.Find(Query.And(
-                                          Query.Or(
-                                              Query.GT(nameof(FileMetaBase.ValidFrom), _dateTimeConstraintBsonValue),
-                                              Query.LT(nameof(FileMetaBase.ValidTo), _dateTimeConstraintBsonValue)),
-                                          Query.EQ(nameof(FileMetaBase.ShouldBeShown), true)))
-                                      .ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Query_Normal()
+            => _fileMetaCollection.Find(Query.And(
+                Query.Or(
+                    Query.GT(nameof(FileMetaBase.ValidFrom), _dateTimeConstraintBsonValue),
+                    Query.LT(nameof(FileMetaBase.ValidTo), _dateTimeConstraintBsonValue)),
+                Query.EQ(nameof(FileMetaBase.ShouldBeShown), true)))
+                .ToListAsync();
 
         [Benchmark]
-        public List<FileMetaBase> Expression_ParametersSwitched()
-        {
-            return _fileMetaCollection.Find(fileMeta =>
-                fileMeta.ShouldBeShown && (fileMeta.ValidFrom > _dateTimeConstraint || fileMeta.ValidTo < _dateTimeConstraint)).ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Expression_ParametersSwitched()
+            => _fileMetaCollection.Find(fileMeta =>
+                fileMeta.ShouldBeShown && (fileMeta.ValidFrom > _dateTimeConstraint || fileMeta.ValidTo < _dateTimeConstraint))
+                .ToListAsync();
 
         [Benchmark]
-        public List<FileMetaBase> Query_ParametersSwitched()
-        {
-            return _fileMetaCollection.Find(Query.And(
-                                          Query.EQ(nameof(FileMetaBase.ShouldBeShown), true),
-                                          Query.Or(
-                                              Query.GT(nameof(FileMetaBase.ValidFrom), _dateTimeConstraintBsonValue),
-                                              Query.LT(nameof(FileMetaBase.ValidTo), _dateTimeConstraintBsonValue))))
-                                      .ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Query_ParametersSwitched()
+            => _fileMetaCollection.Find(Query.And(
+                Query.EQ(nameof(FileMetaBase.ShouldBeShown), true),
+                Query.Or(
+                    Query.GT(nameof(FileMetaBase.ValidFrom), _dateTimeConstraintBsonValue),
+                    Query.LT(nameof(FileMetaBase.ValidTo), _dateTimeConstraintBsonValue))))
+                .ToListAsync();
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            // Disposing logic
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

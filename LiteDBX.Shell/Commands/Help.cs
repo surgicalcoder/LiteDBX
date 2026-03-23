@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Shell.Commands;
 
@@ -14,12 +15,9 @@ internal class HelpAttribute : Attribute
 
 internal class Help : IShellCommand
 {
-    public bool IsCommand(StringScanner s)
-    {
-        return s.Scan(@"help\s*").Length > 0;
-    }
+    public bool IsCommand(StringScanner s) => s.Scan(@"help\s*").Length > 0;
 
-    public void Execute(StringScanner s, Env env)
+    public ValueTask Execute(StringScanner s, Env env)
     {
         var param = s.Scan(".*");
         var d = env.Display;
@@ -46,5 +44,7 @@ internal class Help : IShellCommand
                 d.WriteLine(ConsoleColor.Gray, "  > " + example);
             }
         }
+
+        return ValueTask.CompletedTask;
     }
 }

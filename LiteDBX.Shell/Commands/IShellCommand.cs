@@ -1,8 +1,11 @@
-﻿namespace LiteDbX.Shell;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell;
 
 internal interface IShellCommand
 {
     bool IsCommand(StringScanner s);
 
-    void Execute(StringScanner s, Env env);
+    /// <summary>Execute this shell command asynchronously.</summary>
+    ValueTask Execute(StringScanner s, Env env);
 }

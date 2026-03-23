@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -13,76 +14,67 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-
-            _data = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize); // executed once per each N value
+            _data = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize);
         }
 
         [Benchmark(Baseline = true)]
-        public int Insertion()
+        public async Task<int> Insertion()
         {
-            var count = _fileMetaCollection.Insert(_data);
-            DatabaseInstance.Checkpoint();
-
+            var count = await _fileMetaCollection.Insert(_data);
+            await DatabaseInstance.Checkpoint();
             return count;
         }
 
         [Benchmark]
-        public void InsertionWithLoop()
+        public async Task InsertionWithLoop()
         {
-            // ReSharper disable once ForCanBeConvertedToForeach
             for (var i = 0; i < _data.Count; i++)
             {
-                _fileMetaCollection.Insert(_data[i]);
+                await _fileMetaCollection.Insert(_data[i]);
             }
-
-            DatabaseInstance.Checkpoint();
+            await DatabaseInstance.Checkpoint();
         }
 
         [Benchmark]
-        public int Upsertion()
+        public async Task<int> Upsertion()
         {
-            var count = _fileMetaCollection.Upsert(_data);
-            DatabaseInstance.Checkpoint();
-
+            var count = await _fileMetaCollection.Upsert(_data);
+            await DatabaseInstance.Checkpoint();
             return count;
         }
 
         [Benchmark]
-        public void UpsertionWithLoop()
+        public async Task UpsertionWithLoop()
         {
-            // ReSharper disable once ForCanBeConvertedToForeach
             for (var i = 0; i < _data.Count; i++)
             {
-                _fileMetaCollection.Upsert(_data[i]);
+                await _fileMetaCollection.Upsert(_data[i]);
             }
-
-            DatabaseInstance.Checkpoint();
+            await DatabaseInstance.Checkpoint();
         }
 
         [IterationCleanup]
-        public void IterationCleanup()
+        public async Task IterationCleanup()
         {
-            const string collectionName = nameof(FileMetaBase);
-
-            DatabaseInstance.DropCollection(collectionName);
-
-            DatabaseInstance.Checkpoint();
-            DatabaseInstance.Rebuild();
+            await DatabaseInstance.DropCollection(nameof(FileMetaBase));
+            await DatabaseInstance.Checkpoint();
+            await DatabaseInstance.Rebuild();
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

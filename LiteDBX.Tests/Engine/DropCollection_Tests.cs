@@ -1,4 +1,6 @@
 ﻿using FluentAssertions;
+using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Engine;
@@ -6,45 +8,41 @@ namespace LiteDbX.Tests.Engine;
 public class DropCollection_Tests
 {
     [Fact]
-    public void DropCollection()
+    public async Task DropCollection()
     {
-        using (var file = new TempFile())
-        {
-            using (var db = new LiteDatabase(file.Filename))
-            {
-                db.GetCollectionNames().Should().NotContain("col");
+        using var file = new TempFile();
+        await using var db = new LiteDatabase(file.Filename);
 
-                var col = db.GetCollection("col");
+        var names = await db.GetCollectionNames().ToListAsync();
+        names.Should().NotContain("col");
 
-                col.Insert(new BsonDocument { ["a"] = 1 });
+        var col = db.GetCollection("col");
+        await col.Insert(new BsonDocument { ["a"] = 1 });
 
-                db.GetCollectionNames().Should().Contain("col");
+        (await db.GetCollectionNames().ToListAsync()).Should().Contain("col");
 
-                db.DropCollection("col");
+        await db.DropCollection("col");
 
-                db.GetCollectionNames().Should().NotContain("col");
-            }
-        }
+        (await db.GetCollectionNames().ToListAsync()).Should().NotContain("col");
     }
 
     [Fact]
-    public void InsertDropCollection()
+    public async Task InsertDropCollection()
     {
-        using (var file = new TempFile())
-        {
-            using (var db = new LiteDatabase(file.Filename))
-            {
-                var col = db.GetCollection("test");
-                col.Insert(new BsonDocument { ["_id"] = 1 });
-                db.DropCollection("test");
-                db.Rebuild();
-            }
+        using var file = new TempFile();
 
-            using (var db = new LiteDatabase(file.Filename))
-            {
-                var col = db.GetCollection("test");
-                col.Insert(new BsonDocument { ["_id"] = 1 });
-            }
+        await using (var db = new LiteDatabase(file.Filename))
+        {
+            var col = db.GetCollection("test");
+            await col.Insert(new BsonDocument { ["_id"] = 1 });
+            await db.DropCollection("test");
+            await db.Rebuild();
+        }
+
+        await using (var db = new LiteDatabase(file.Filename))
+        {
+            var col = db.GetCollection("test");
+            await col.Insert(new BsonDocument { ["_id"] = 1 });
         }
     }
 }

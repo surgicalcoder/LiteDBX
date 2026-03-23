@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -20,7 +21,7 @@ public class Issue2298_Tests
     }
 
     [Fact]
-    public void We_Dont_Need_Ctor()
+    public async Task We_Dont_Need_Ctor()
     {
         BsonMapper.Global.RegisterType(
             range => new BsonDocument
@@ -34,10 +35,10 @@ public class Issue2298_Tests
 
         var range = new QuantityRange<Mass>(100, 500, Mass.Units.Pound);
         var filename = "Demo.DB";
-        var DB = new LiteDatabase(filename);
+        await using var DB = new LiteDatabase(filename);
         var collection = DB.GetCollection<QuantityRange<Mass>>("DEMO");
-        collection.Insert(range);
-        var restored = collection.FindAll().First();
+        await collection.Insert(range);
+        var restored = await collection.FindAll().FirstAsync();
     }
 
     public struct Mass

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Shell.Commands;
 
@@ -11,12 +12,9 @@ namespace LiteDbX.Shell.Commands;
 )]
 internal class Ed : IShellCommand
 {
-    public bool IsCommand(StringScanner s)
-    {
-        return s.Match(@"ed$");
-    }
+    public bool IsCommand(StringScanner s) => s.Match(@"ed$");
 
-    public void Execute(StringScanner s, Env env)
+    public ValueTask Execute(StringScanner s, Env env)
     {
         var temp = Path.GetTempPath() + "LiteDBX.Shell.txt";
 
@@ -31,11 +29,11 @@ internal class Ed : IShellCommand
 
         var text = File.ReadAllText(temp);
 
-        if (text == last)
+        if (text != last)
         {
-            return;
+            env.Input.Queue.Enqueue(text);
         }
 
-        env.Input.Queue.Enqueue(text);
+        return ValueTask.CompletedTask;
     }
 }

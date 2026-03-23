@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -7,15 +8,13 @@ namespace LiteDbX.Tests.Issues;
 public class Issue1865_Tests
 {
     [Fact]
-    public void Incluced_document_types_should_be_reald()
+    public async Task Incluced_document_types_should_be_reald()
     {
         BsonMapper.Global.Entity<Point>().DbRef(p => p.Project, "activity");
         BsonMapper.Global.Entity<Point>().DbRef(p => p.Parent, "activity");
         BsonMapper.Global.Entity<Project>().DbRef(p => p.Points, "activity");
 
-        //BsonMapper.Global.ResolveCollectionName = (s) => "activity";
-
-        using var _database = new LiteDatabase(":memory:");
+        await using var _database = new LiteDatabase(":memory:");
         var projectsCol = _database.GetCollection<Project>("activity");
         var pointsCol = _database.GetCollection<Point>("activity");
 
@@ -26,38 +25,38 @@ public class Issue1865_Tests
         project.Points.Add(point1);
         project.Points.Add(point2);
 
-        pointsCol.Insert(point1);
-        pointsCol.Insert(point2);
-        projectsCol.Insert(project);
+        await pointsCol.Insert(point1);
+        await pointsCol.Insert(point2);
+        await projectsCol.Insert(project);
 
 
-        var p1 = pointsCol
+        var p1 = await pointsCol
             .FindById(point1.Id);
         Assert.Equal(typeof(Project), p1.Parent.GetType());
         Assert.Equal(typeof(Project), p1.Project.GetType());
 
-        var p2 = pointsCol
+        var p2 = await pointsCol
             .FindById(point2.Id);
         Assert.Equal(typeof(Point), p2.Parent.GetType());
         Assert.Equal(typeof(Project), p2.Project.GetType());
 
-        var prj = projectsCol
+        var prj = await projectsCol
             .FindById(project.Id);
         Assert.Equal(typeof(Point), prj.Points[0].GetType());
 
-        p1 = pointsCol
+        p1 = await pointsCol
              .Include(p => p.Parent).Include(p => p.Project)
              .FindById(point1.Id);
         Assert.Equal(typeof(Project), p1.Parent.GetType());
         Assert.Equal(typeof(Project), p1.Project.GetType());
 
-        p2 = pointsCol
+        p2 = await pointsCol
              .Include(p => p.Parent).Include(p => p.Project)
              .FindById(point2.Id);
         Assert.Equal(typeof(Point), p2.Parent.GetType());
         Assert.Equal(typeof(Project), p2.Project.GetType());
 
-        prj = projectsCol
+        prj = await projectsCol
               .Include(p => p.Points)
               .FindById(project.Id);
         Assert.Equal(typeof(Point), prj.Points[0].GetType());

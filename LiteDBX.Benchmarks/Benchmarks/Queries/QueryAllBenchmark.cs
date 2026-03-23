@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -13,43 +14,42 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-
-            _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize)); // executed once per each N value
-            DatabaseInstance.Checkpoint();
+            await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
+            await DatabaseInstance.Checkpoint();
         }
 
         [Benchmark(Baseline = true)]
-        public List<FileMetaBase> FindAll()
+        public async Task<List<FileMetaBase>> FindAll()
         {
-            return _fileMetaCollection.FindAll().ToList();
+            return await _fileMetaCollection.FindAll().ToListAsync();
         }
 
         [Benchmark]
-        public List<FileMetaBase> FindAllWithExpression()
+        public async Task<List<FileMetaBase>> FindAllWithExpression()
         {
-            return _fileMetaCollection.Find(_ => true).ToList();
+            return await _fileMetaCollection.Find(_ => true).ToListAsync();
         }
 
         [Benchmark]
-        public List<FileMetaBase> FindAllWithQuery()
+        public async Task<List<FileMetaBase>> FindAllWithQuery()
         {
-            return _fileMetaCollection.Find(Query.All()).ToList();
+            return await _fileMetaCollection.Find(Query.All()).ToListAsync();
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            // Disposing logic
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -12,103 +13,67 @@ public class Issue1860_Tests
     }
 
     [Fact]
-    public void Constructor_has_enum_bsonctor()
+    public async Task Constructor_has_enum_bsonctor()
     {
         using var db = new LiteDatabase(":memory:");
-
-        // Get a collection (or create, if doesn't exist)
         var col1 = db.GetCollection<C1>("c1");
         var col3 = db.GetCollection<C3>("c3");
 
-        var c1 = new C1
-        {
-            Id = 1,
-            EnumAB = EnumAB.B
-        };
+        var c1 = new C1 { Id = 1, EnumAB = EnumAB.B };
+        await col1.Insert(c1);
 
-        col1.Insert(c1);
+        var c3 = new C3(1, EnumAB.B);
+        await col3.Insert(c3);
 
-        var c3 = new C3
-        (
-            1,
-            EnumAB.B
-        );
-
-        col3.Insert(c3);
-
-        var value1 = col1.FindAll().FirstOrDefault();
+        var value1 = await col1.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value1);
         Assert.Equal(c1.EnumAB, value1.EnumAB);
 
-        var value3 = col3.FindAll().FirstOrDefault();
+        var value3 = await col3.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value3);
         Assert.Equal(c3.EnumAB, value3.EnumAB);
     }
 
     [Fact]
-    public void Constructor_has_enum()
+    public async Task Constructor_has_enum()
     {
         using var db = new LiteDatabase(":memory:");
-
-        // Get a collection (or create, if doesn't exist)
         var col1 = db.GetCollection<C1>("c1");
         var col2 = db.GetCollection<C2>("c2");
 
-        var c1 = new C1
-        {
-            Id = 1,
-            EnumAB = EnumAB.B
-        };
+        var c1 = new C1 { Id = 1, EnumAB = EnumAB.B };
+        await col1.Insert(c1);
 
-        col1.Insert(c1);
+        var c2 = new C2(1, EnumAB.B);
+        await col2.Insert(c2);
 
-        var c2 = new C2
-        (
-            1,
-            EnumAB.B
-        );
-
-        col2.Insert(c2);
-
-        var value1 = col1.FindAll().FirstOrDefault();
+        var value1 = await col1.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value1);
         Assert.Equal(c1.EnumAB, value1.EnumAB);
 
-        var value2 = col2.FindAll().FirstOrDefault();
+        var value2 = await col2.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value2);
         Assert.Equal(c2.EnumAB, value2.EnumAB);
     }
 
     [Fact]
-    public void Constructor_has_enum_asint()
+    public async Task Constructor_has_enum_asint()
     {
         using var db = new LiteDatabase(":memory:", new BsonMapper { EnumAsInteger = true });
-
-        // Get a collection (or create, if doesn't exist)
         var col1 = db.GetCollection<C1>("c1");
         var col2 = db.GetCollection<C2>("c2");
 
-        var c1 = new C1
-        {
-            Id = 1,
-            EnumAB = EnumAB.B
-        };
+        var c1 = new C1 { Id = 1, EnumAB = EnumAB.B };
+        await col1.Insert(c1);
 
-        col1.Insert(c1);
+        var c2 = new C2(1, EnumAB.B);
+        await col2.Insert(c2);
 
-        var c2 = new C2
-        (
-            1,
-            EnumAB.B
-        );
-
-        col2.Insert(c2);
-
-        var value1 = col1.FindAll().FirstOrDefault();
+        var value1 = await col1.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value1);
         Assert.Equal(c1.EnumAB, value1.EnumAB);
 
-        var value2 = col2.FindAll().FirstOrDefault();
+        var value2 = await col2.FindAll().FirstOrDefaultAsync();
         Assert.NotNull(value2);
         Assert.Equal(c2.EnumAB, value2.EnumAB);
     }

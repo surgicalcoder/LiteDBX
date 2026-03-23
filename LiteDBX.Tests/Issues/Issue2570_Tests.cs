@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -6,39 +7,35 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2570_Tests
 {
     [Fact]
-    public void Issue2570_Tuples()
+    public async Task Issue2570_Tuples()
     {
-        using (var db = new LiteDatabase(":memory:"))
-        {
-            var col = db.GetCollection<Person>("Person");
+        await using var db = new LiteDatabase(":memory:");
+        var col = db.GetCollection<Person>("Person");
 
-            col.Insert(new Person { Name = ("John", "Doe") });
-            col.Insert(new Person { Name = ("Joana", "Doe") });
+        await col.Insert(new Person { Name = ("John", "Doe") });
+        await col.Insert(new Person { Name = ("Joana", "Doe") });
 
-            var result = col.FindOne(x => x.Name.FirstName == "John");
+        var result = await col.FindOne(x => x.Name.FirstName == "John");
 
-            result.Should().NotBeNull();
-            result.Name.FirstName.Should().Be("John");
-            result.Name.LastName.Should().Be("Doe");
-        }
+        result.Should().NotBeNull();
+        result.Name.FirstName.Should().Be("John");
+        result.Name.LastName.Should().Be("Doe");
     }
 
     [Fact]
-    public void Issue2570_Structs()
+    public async Task Issue2570_Structs()
     {
-        using (var db = new LiteDatabase(":memory:"))
-        {
-            var col = db.GetCollection<PersonWithStruct>("Person");
+        await using var db = new LiteDatabase(":memory:");
+        var col = db.GetCollection<PersonWithStruct>("Person");
 
-            col.Insert(new PersonWithStruct { Name = new PersonData { FirstName = "John", LastName = "Doe" } });
-            col.Insert(new PersonWithStruct { Name = new PersonData { FirstName = "Joana", LastName = "Doe" } });
+        await col.Insert(new PersonWithStruct { Name = new PersonData { FirstName = "John", LastName = "Doe" } });
+        await col.Insert(new PersonWithStruct { Name = new PersonData { FirstName = "Joana", LastName = "Doe" } });
 
-            var result = col.FindOne(x => x.Name.FirstName == "John");
+        var result = await col.FindOne(x => x.Name.FirstName == "John");
 
-            result.Should().NotBeNull();
-            result.Name.FirstName.Should().Be("John");
-            result.Name.LastName.Should().Be("Doe");
-        }
+        result.Should().NotBeNull();
+        result.Name.FirstName.Should().Be("John");
+        result.Name.LastName.Should().Be("Doe");
     }
 
     public class Person

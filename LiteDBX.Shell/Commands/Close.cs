@@ -1,4 +1,6 @@
-﻿namespace LiteDbX.Shell.Commands;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell.Commands;
 
 [Help(
     Name = "close",
@@ -12,11 +14,11 @@ internal class Close : IShellCommand
         return s.Scan(@"close$").Length > 0;
     }
 
-    public void Execute(StringScanner s, Env env)
+    public async ValueTask Execute(StringScanner s, Env env)
     {
         if (env.Database != null)
         {
-            env.Database.Dispose();
+            await env.Database.DisposeAsync();
             env.Database = null;
         }
     }

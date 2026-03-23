@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -11,59 +12,49 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
     public class QueryCompoundIndexBenchmark : BenchmarkBase
     {
         private const string COMPOUND_INDEX_NAME = "CompoundIndex1";
-
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup(Target = nameof(Query_SimpleIndex_Baseline))]
-        public void GlobalSetupSimpleIndexBaseline()
+        public async Task GlobalSetupSimpleIndexBaseline()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.IsFavorite);
-
-            _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize)); // executed once per each N value
-
-            DatabaseInstance.Checkpoint();
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.IsFavorite);
+            await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
+            await DatabaseInstance.Checkpoint();
         }
 
         [GlobalSetup(Target = nameof(Query_CompoundIndexVariant))]
-        public void GlobalSetupCompoundIndexVariant()
+        public async Task GlobalSetupCompoundIndexVariant()
         {
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(COMPOUND_INDEX_NAME, $"$.{nameof(FileMetaBase.IsFavorite)};$.{nameof(FileMetaBase.ShouldBeShown)}");
-
-            _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize)); // executed once per each N value
-
-            DatabaseInstance.Checkpoint();
+            await _fileMetaCollection.EnsureIndex(COMPOUND_INDEX_NAME, $"$.{nameof(FileMetaBase.IsFavorite)};$.{nameof(FileMetaBase.ShouldBeShown)}");
+            await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
+            await DatabaseInstance.Checkpoint();
         }
 
         [Benchmark(Baseline = true)]
-        public List<FileMetaBase> Query_SimpleIndex_Baseline()
-        {
-            return _fileMetaCollection.Find(Query.And(
-                                          Query.EQ(nameof(FileMetaBase.IsFavorite), false),
-                                          Query.EQ(nameof(FileMetaBase.ShouldBeShown), true)))
-                                      .ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Query_SimpleIndex_Baseline()
+            => _fileMetaCollection.Find(Query.And(
+                Query.EQ(nameof(FileMetaBase.IsFavorite), false),
+                Query.EQ(nameof(FileMetaBase.ShouldBeShown), true))).ToListAsync();
 
         [Benchmark]
-        public List<FileMetaBase> Query_CompoundIndexVariant()
-        {
-            return _fileMetaCollection.Find(Query.EQ(COMPOUND_INDEX_NAME, $"{false};{true}")).ToList();
-        }
+        public ValueTask<List<FileMetaBase>> Query_CompoundIndexVariant()
+            => _fileMetaCollection.Find(Query.EQ(COMPOUND_INDEX_NAME, $"{false};{true}")).ToListAsync();
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            // Disposing logic
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

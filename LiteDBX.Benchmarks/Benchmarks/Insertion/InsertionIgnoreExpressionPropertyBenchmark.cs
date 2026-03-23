@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -17,82 +17,86 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         private ILiteCollection<FileMetaWithExclusion> _fileMetaExclusionCollection;
 
         [GlobalSetup(Target = nameof(Insertion))]
-        public void GlobalBsonIgnoreSetup()
+        public async Task GlobalBsonIgnoreSetup()
         {
             File.Delete(DatabasePath);
 
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
+            await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
 
             _baseData = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize); // executed once per each N value
         }
 
         [GlobalSetup(Target = nameof(InsertionWithBsonIgnore))]
-        public void GlobalIgnorePropertySetup()
+        public async Task GlobalIgnorePropertySetup()
         {
             File.Delete(DatabasePath);
 
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaExclusionCollection = DatabaseInstance.GetCollection<FileMetaWithExclusion>();
-            _fileMetaExclusionCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
+            await _fileMetaExclusionCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
 
             _baseDataWithBsonIgnore = FileMetaGenerator<FileMetaWithExclusion>.GenerateList(DatasetSize); // executed once per each N value
         }
 
         [Benchmark(Baseline = true)]
-        public int Insertion()
+        public async ValueTask<int> Insertion()
         {
-            var count = _fileMetaCollection.Insert(_baseData);
-            DatabaseInstance.Checkpoint();
+            var count = await _fileMetaCollection.Insert(_baseData);
+            await DatabaseInstance.Checkpoint();
 
             return count;
         }
 
         [Benchmark]
-        public int InsertionWithBsonIgnore()
+        public async ValueTask<int> InsertionWithBsonIgnore()
         {
-            var count = _fileMetaExclusionCollection.Insert(_baseDataWithBsonIgnore);
-            DatabaseInstance.Checkpoint();
+            var count = await _fileMetaExclusionCollection.Insert(_baseDataWithBsonIgnore);
+            await DatabaseInstance.Checkpoint();
 
             return count;
         }
 
         [IterationCleanup]
-        public void IterationCleanup()
+        public async Task IterationCleanup()
         {
             var indexesCollection = DatabaseInstance.GetCollection("$indexes");
-            var droppedCollectionIndexes = indexesCollection.Query().Where(x => x["name"] != "_id").ToDocuments().ToList();
+            var droppedCollectionIndexes = await indexesCollection.Query()
+                .Where(x => x["name"] != "_id")
+                .ToList();
 
-            var collectionNames = DatabaseInstance.GetCollectionNames();
-
-            foreach (var name in collectionNames)
+            await foreach (var name in DatabaseInstance.GetCollectionNames())
             {
-                DatabaseInstance.DropCollection(name);
+                await DatabaseInstance.DropCollection(name);
             }
 
             foreach (var indexInfo in droppedCollectionIndexes)
             {
-                DatabaseInstance.GetCollection(indexInfo["collection"])
-                                .EnsureIndex(indexInfo["name"], BsonExpression.Create(indexInfo["expression"]), indexInfo["unique"]);
+                await DatabaseInstance.GetCollection(indexInfo["collection"].AsString)
+                    .EnsureIndex(indexInfo["name"].AsString,
+                        BsonExpression.Create(indexInfo["expression"]),
+                        indexInfo["unique"].AsBoolean);
             }
 
-            DatabaseInstance.Checkpoint();
-            DatabaseInstance.Rebuild();
+            await DatabaseInstance.Checkpoint();
+            await DatabaseInstance.Rebuild();
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
             _baseData?.Clear();
             _baseData = null;
-
             _baseDataWithBsonIgnore?.Clear();
             _baseDataWithBsonIgnore = null;
 
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
 
             File.Delete(DatabasePath);
         }

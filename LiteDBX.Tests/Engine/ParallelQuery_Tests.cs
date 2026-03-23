@@ -10,35 +10,32 @@ namespace LiteDbX.Tests.Engine;
 public class ParallelQuery_Tests
 {
     [Fact(Skip = "Must fix parallel query fetch")]
-    public void Query_Parallel()
+    public async Task Query_Parallel()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using var db = new LiteDatabase(new MemoryStream());
+        var col  = db.GetCollection<Person>("person");
+        var all  = DataGen.Person().ToArray();
+
+        await col.Insert(all);
+
+        var bag = new ConcurrentBag<Person>();
+        var people = await col.FindAll().ToListAsync();
+
+        var tasks = people.Select(async person =>
         {
-            var col = db.GetCollection<Person>("person");
-            var all = DataGen.Person().ToArray();
+            var col2   = db.GetCollection<Person>("person");
+            var exists = await col2.Exists(x => x.Id == person.Id);
 
-            col.Insert(all);
-
-            var bag = new ConcurrentBag<Person>();
-            var people = col.FindAll();
-
-            Parallel.ForEach(people, person =>
-                //foreach(var person in people)
+            if (exists)
             {
-                var col2 = db.GetCollection<Person>("person");
-                var exists = col2.Exists(x => x.Id == person.Id);
+                var col3 = db.GetCollection<Person>("person");
+                var item = await col3.FindOne(x => x.Id == person.Id);
+                bag.Add(item);
+            }
+        });
 
-                if (exists)
-                {
-                    var col3 = db.GetCollection<Person>("person");
+        await Task.WhenAll(tasks);
 
-                    var item = col3.FindOne(x => x.Id == person.Id);
-
-                    bag.Add(item);
-                }
-            });
-
-            all.Length.Should().Be(bag.Count);
-        }
+        all.Length.Should().Be(bag.Count);
     }
 }

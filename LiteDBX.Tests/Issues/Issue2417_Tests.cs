@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using LiteDbX.Engine;
 using Xunit;
@@ -8,26 +10,19 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2417_Tests
 {
     [Fact]
-    public void Rebuild_Detected_Infinite_Loop()
+    public async Task Rebuild_Detected_Infinite_Loop()
     {
         var original = "../../../Resources/Issue2417_MyData.db";
 
         using (var filename = new TempFile(original))
         {
-            var settings = new EngineSettings
-            {
-                Filename = filename,
-                AutoRebuild = true
-            };
+            var settings = new EngineSettings { Filename = filename, AutoRebuild = true };
 
             try
             {
                 using (var db = new LiteEngine(settings))
                 {
-                    // infinite loop here
-                    var col = db.Query("customers", Query.All()).ToList();
-
-                    // never run here
+                    var col = await db.Query("customers", Query.All()).ToListAsync();
                     Assert.Fail("not expected");
                 }
             }
@@ -38,8 +33,8 @@ public class Issue2417_Tests
 
             using (var db = new LiteEngine(settings))
             {
-                var col = db.Query("customers", Query.All()).ToList().Count;
-                var errors = db.Query("_rebuild_errors", Query.All()).ToList().Count;
+                var col = (await db.Query("customers", Query.All()).ToListAsync()).Count;
+                var errors = (await db.Query("_rebuild_errors", Query.All()).ToListAsync()).Count;
 
                 col.Should().Be(4);
                 errors.Should().Be(0);
@@ -48,7 +43,7 @@ public class Issue2417_Tests
     }
 
     [Fact]
-    public void Rebuild_Detected_Infinite_Loop_With_Password()
+    public async Task Rebuild_Detected_Infinite_Loop_With_Password()
     {
         var original = "../../../Resources/Issue2417_TestCacheDb.db";
 
@@ -65,10 +60,7 @@ public class Issue2417_Tests
             {
                 using (var db = new LiteEngine(settings))
                 {
-                    // infinite loop here
-                    var col = db.Query("hubData$AppOperations", Query.All()).ToList();
-
-                    // never run here
+                    var col = await db.Query("hubData$AppOperations", Query.All()).ToListAsync();
                     Assert.Fail("not expected");
                 }
             }
@@ -79,8 +71,8 @@ public class Issue2417_Tests
 
             using (var db = new LiteEngine(settings))
             {
-                var col = db.Query("hubData$AppOperations", Query.All()).ToList().Count;
-                var errors = db.Query("_rebuild_errors", Query.All()).ToList().Count;
+                var col = (await db.Query("hubData$AppOperations", Query.All()).ToListAsync()).Count;
+                var errors = (await db.Query("_rebuild_errors", Query.All()).ToListAsync()).Count;
 
                 col.Should().Be(408);
                 errors.Should().Be(0);

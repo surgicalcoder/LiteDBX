@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Shell;
 
@@ -19,75 +20,53 @@ internal class Display
         WriteInfo("");
     }
 
-    public void WritePrompt(string text)
-    {
-        Write(ConsoleColor.White, text);
-    }
+    public void WritePrompt(string text) => Write(ConsoleColor.White, text);
 
-    public void WriteInfo(string text)
-    {
-        WriteLine(ConsoleColor.Gray, text);
-    }
+    public void WriteInfo(string text) => WriteLine(ConsoleColor.Gray, text);
 
     public void WriteError(Exception ex)
     {
         WriteLine(ConsoleColor.Red, ex.Message);
 
-        if (ex is LiteException && (ex as LiteException).ErrorCode == LiteException.UNEXPECTED_TOKEN)
+        if (ex is LiteException le && le.ErrorCode == LiteException.UNEXPECTED_TOKEN)
         {
-            var err = ex as LiteException;
-
-            WriteLine(ConsoleColor.DarkYellow, "> " + "^".PadLeft((int)err.Position + 1, ' '));
+            WriteLine(ConsoleColor.DarkYellow, "> " + "^".PadLeft((int)le.Position + 1, ' '));
         }
     }
 
-    public void WriteResult(IBsonDataReader result, Env env)
+    /// <summary>
+    /// Stream all results from an async <see cref="IBsonDataReader"/> to the console.
+    /// The reader is disposed when enumeration completes.
+    /// </summary>
+    public async Task WriteResult(IBsonDataReader result, Env env)
     {
         var index = 0;
-        var writer = new JsonWriter(Console.Out)
+        var writer = new JsonWriter(Console.Out) { Pretty = Pretty, Indent = 2 };
+
+        await using (result)
         {
-            Pretty = Pretty,
-            Indent = 2
-        };
-
-        foreach (var item in result.ToEnumerable())
-        {
-            if (!env.Running)
+            while (await result.Read())
             {
-                return;
-            }
+                if (!env.Running) return;
 
-            Write(ConsoleColor.Cyan, string.Format("[{0}]: ", ++index));
+                Write(ConsoleColor.Cyan, string.Format("[{0}]: ", ++index));
 
-            if (Pretty)
-            {
+                if (Pretty) Console.WriteLine();
+
+                Console.ForegroundColor = ConsoleColor.DarkCyan;
+                writer.Serialize(result.Current);
                 Console.WriteLine();
             }
-
-            Console.ForegroundColor = ConsoleColor.DarkCyan;
-
-            writer.Serialize(item);
-
-            Console.WriteLine();
         }
     }
 
     #region Print public methods
 
-    public void Write(string text)
-    {
-        Write(Console.ForegroundColor, text);
-    }
+    public void Write(string text) => Write(Console.ForegroundColor, text);
 
-    public void WriteLine(string text)
-    {
-        WriteLine(Console.ForegroundColor, text);
-    }
+    public void WriteLine(string text) => WriteLine(Console.ForegroundColor, text);
 
-    public void WriteLine(ConsoleColor color, string text)
-    {
-        Write(color, text + Environment.NewLine);
-    }
+    public void WriteLine(ConsoleColor color, string text) => Write(color, text + Environment.NewLine);
 
     public void Write(ConsoleColor color, string text)
     {

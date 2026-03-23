@@ -2,84 +2,45 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX;
 
 /// <summary>
-/// The LiteDBX repository pattern. A simple way to access your documents in a single class with fluent query api
+/// Async-only repository convenience wrapper around <see cref="ILiteDatabase"/>.
+/// Implements <see cref="ILiteRepository"/> — all storage operations are async.
 /// </summary>
 public class LiteRepository : ILiteRepository
 {
-    #region Query
-
-    /// <summary>
-    /// Returns new instance of LiteQueryable that provides all method to query any entity inside collection. Use fluent API to
-    /// apply filter/includes an than run any execute command, like ToList() or First()
-    /// </summary>
-    public ILiteQueryable<T> Query<T>(string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Query();
-    }
-
-    #endregion
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~LiteRepository()
-    {
-        Dispose(false);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            Database.Dispose();
-        }
-    }
-
     #region Properties
 
-    /// <summary>
-    /// Get database instance
-    /// </summary>
+    /// <inheritdoc/>
     public ILiteDatabase Database { get; }
 
     #endregion
 
-    #region Ctor
+    #region Constructors
 
-    /// <summary>
-    /// Starts LiteDBX database an existing Database instance
-    /// </summary>
+    /// <summary>Wrap an existing <see cref="ILiteDatabase"/> instance.</summary>
     public LiteRepository(ILiteDatabase database)
     {
-        Database = database;
+        Database = database ?? throw new ArgumentNullException(nameof(database));
     }
 
-    /// <summary>
-    /// Starts LiteDBX database using a connection string for file system database
-    /// </summary>
+    /// <summary>Open a database from a connection string.</summary>
     public LiteRepository(string connectionString, BsonMapper mapper = null)
     {
         Database = new LiteDatabase(connectionString, mapper);
     }
 
-    /// <summary>
-    /// Starts LiteDBX database using a connection string for file system database
-    /// </summary>
+    /// <summary>Open a database from a <see cref="ConnectionString"/>.</summary>
     public LiteRepository(ConnectionString connectionString, BsonMapper mapper = null)
     {
         Database = new LiteDatabase(connectionString, mapper);
     }
 
-    /// <summary>
-    /// Starts LiteDBX database using a Stream disk
-    /// </summary>
+    /// <summary>Open an in-memory or stream-backed database.</summary>
     public LiteRepository(Stream stream, BsonMapper mapper = null, Stream logStream = null)
     {
         Database = new LiteDatabase(stream, mapper, logStream);
@@ -87,257 +48,152 @@ public class LiteRepository : ILiteRepository
 
     #endregion
 
+    #region Query (sync builder — no I/O)
+
+    /// <inheritdoc/>
+    public ILiteQueryable<T> Query<T>(string collectionName = null)
+        => Database.GetCollection<T>(collectionName).Query();
+
+    #endregion
+
     #region Insert
 
-    /// <summary>
-    /// Insert a new document into collection. Document Id must be a new value in collection - Returns document Id
-    /// </summary>
-    public BsonValue Insert<T>(T entity, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Insert(entity);
-    }
+    /// <inheritdoc/>
+    public ValueTask<BsonValue> Insert<T>(T entity, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Insert(entity, cancellationToken);
 
-    /// <summary>
-    /// Insert an array of new documents into collection. Document Id must be a new value in collection. Can be set buffer size
-    /// to commit at each N documents
-    /// </summary>
-    public int Insert<T>(IEnumerable<T> entities, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Insert(entities);
-    }
+    /// <inheritdoc/>
+    public ValueTask<int> Insert<T>(IEnumerable<T> entities, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Insert(entities, cancellationToken);
 
     #endregion
 
     #region Update
 
-    /// <summary>
-    /// Update a document into collection. Returns false if not found document in collection
-    /// </summary>
-    public bool Update<T>(T entity, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Update(entity);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> Update<T>(T entity, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Update(entity, cancellationToken);
 
-    /// <summary>
-    /// Update all documents
-    /// </summary>
-    public int Update<T>(IEnumerable<T> entities, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Update(entities);
-    }
+    /// <inheritdoc/>
+    public ValueTask<int> Update<T>(IEnumerable<T> entities, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Update(entities, cancellationToken);
 
     #endregion
 
     #region Upsert
 
-    /// <summary>
-    /// Insert or Update a document based on _id key. Returns true if insert entity or false if update entity
-    /// </summary>
-    public bool Upsert<T>(T entity, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Upsert(entity);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> Upsert<T>(T entity, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Upsert(entity, cancellationToken);
 
-    /// <summary>
-    /// Insert or Update all documents based on _id key. Returns entity count that was inserted
-    /// </summary>
-    public int Upsert<T>(IEnumerable<T> entities, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Upsert(entities);
-    }
+    /// <inheritdoc/>
+    public ValueTask<int> Upsert<T>(IEnumerable<T> entities, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Upsert(entities, cancellationToken);
 
     #endregion
 
     #region Delete
 
-    /// <summary>
-    /// Delete entity based on _id key
-    /// </summary>
-    public bool Delete<T>(BsonValue id, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).Delete(id);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> Delete<T>(BsonValue id, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).Delete(id, cancellationToken);
 
-    /// <summary>
-    /// Delete entity based on Query
-    /// </summary>
-    public int DeleteMany<T>(BsonExpression predicate, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).DeleteMany(predicate);
-    }
+    /// <inheritdoc/>
+    public ValueTask<int> DeleteMany<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).DeleteMany(predicate, cancellationToken);
 
-    /// <summary>
-    /// Delete entity based on predicate filter expression
-    /// </summary>
-    public int DeleteMany<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).DeleteMany(predicate);
-    }
+    /// <inheritdoc/>
+    public ValueTask<int> DeleteMany<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).DeleteMany(predicate, cancellationToken);
 
     #endregion
 
     #region EnsureIndex
 
-    /// <summary>
-    /// Create a new permanent index in all documents inside this collections if index not exists already. Returns true if
-    /// index was created or false if already exits
-    /// </summary>
-    /// <param name="name">Index name - unique name for this collection</param>
-    /// <param name="expression">Create a custom expression function to be indexed</param>
-    /// <param name="unique">If is a unique index</param>
-    /// <param name="collectionName">Collection Name</param>
-    public bool EnsureIndex<T>(string name, BsonExpression expression, bool unique = false, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).EnsureIndex(name, expression, unique);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> EnsureIndex<T>(string name, BsonExpression expression, bool unique = false, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).EnsureIndex(name, expression, unique, cancellationToken);
 
-    /// <summary>
-    /// Create a new permanent index in all documents inside this collections if index not exists already. Returns true if
-    /// index was created or false if already exits
-    /// </summary>
-    /// <param name="expression">Create a custom expression function to be indexed</param>
-    /// <param name="unique">If is a unique index</param>
-    /// <param name="collectionName">Collection Name</param>
-    public bool EnsureIndex<T>(BsonExpression expression, bool unique = false, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).EnsureIndex(expression, unique);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> EnsureIndex<T>(BsonExpression expression, bool unique = false, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).EnsureIndex(expression, unique, cancellationToken);
 
-    /// <summary>
-    /// Create a new permanent index in all documents inside this collections if index not exists already.
-    /// </summary>
-    /// <param name="keySelector">LinqExpression to be converted into BsonExpression to be indexed</param>
-    /// <param name="unique">Create a unique keys index?</param>
-    /// <param name="collectionName">Collection Name</param>
-    public bool EnsureIndex<T, K>(Expression<Func<T, K>> keySelector, bool unique = false, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).EnsureIndex(keySelector, unique);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> EnsureIndex<T, K>(Expression<Func<T, K>> keySelector, bool unique = false, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).EnsureIndex(keySelector, unique, cancellationToken);
 
-    /// <summary>
-    /// Create a new permanent index in all documents inside this collections if index not exists already.
-    /// </summary>
-    /// <param name="name">Index name - unique name for this collection</param>
-    /// <param name="keySelector">LinqExpression to be converted into BsonExpression to be indexed</param>
-    /// <param name="unique">Create a unique keys index?</param>
-    /// <param name="collectionName">Collection Name</param>
-    public bool EnsureIndex<T, K>(string name, Expression<Func<T, K>> keySelector, bool unique = false, string collectionName = null)
-    {
-        return Database.GetCollection<T>(collectionName).EnsureIndex(name, keySelector, unique);
-    }
+    /// <inheritdoc/>
+    public ValueTask<bool> EnsureIndex<T, K>(string name, Expression<Func<T, K>> keySelector, bool unique = false, string collectionName = null, CancellationToken cancellationToken = default)
+        => Database.GetCollection<T>(collectionName).EnsureIndex(name, keySelector, unique, cancellationToken);
 
     #endregion
 
-    #region Shortcuts
+    #region Convenience queries
+
+    /// <inheritdoc/>
+    public ValueTask<T> SingleById<T>(BsonValue id, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where("_id = @0", id).Single(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<List<T>> Fetch<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).ToList(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<List<T>> Fetch<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).ToList(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> First<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).First(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> First<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).First(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> FirstOrDefault<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).FirstOrDefault(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> FirstOrDefault<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).FirstOrDefault(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> Single<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).Single(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> Single<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).Single(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> SingleOrDefault<T>(BsonExpression predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).SingleOrDefault(cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<T> SingleOrDefault<T>(Expression<Func<T, bool>> predicate, string collectionName = null, CancellationToken cancellationToken = default)
+        => Query<T>(collectionName).Where(predicate).SingleOrDefault(cancellationToken);
+
+    #endregion
+
+    #region Lifecycle
+
+    /// <inheritdoc/>
+    public ValueTask DisposeAsync() => Database.DisposeAsync();
 
     /// <summary>
-    /// Search for a single instance of T by Id. Shortcut from Query.SingleById
+    /// Synchronous dispose convenience. Delegates to <see cref="DisposeAsync"/> and blocks.
+    /// Prefer <c>await using</c> where possible.
     /// </summary>
-    public T SingleById<T>(BsonValue id, string collectionName = null)
+    public void Dispose()
     {
-        return Database.GetCollection<T>(collectionName).Query()
-                       .Where("_id = @0", id)
-                       .Single();
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+        GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// Execute Query[T].Where(predicate).ToList();
-    /// </summary>
-    public List<T> Fetch<T>(BsonExpression predicate, string collectionName = null)
+    ~LiteRepository()
     {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .ToList();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).ToList();
-    /// </summary>
-    public List<T> Fetch<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .ToList();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).First();
-    /// </summary>
-    public T First<T>(BsonExpression predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .First();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).First();
-    /// </summary>
-    public T First<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .First();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).FirstOrDefault();
-    /// </summary>
-    public T FirstOrDefault<T>(BsonExpression predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .FirstOrDefault();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).FirstOrDefault();
-    /// </summary>
-    public T FirstOrDefault<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .FirstOrDefault();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).Single();
-    /// </summary>
-    public T Single<T>(BsonExpression predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .Single();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).Single();
-    /// </summary>
-    public T Single<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .Single();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).SingleOrDefault();
-    /// </summary>
-    public T SingleOrDefault<T>(BsonExpression predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .SingleOrDefault();
-    }
-
-    /// <summary>
-    /// Execute Query[T].Where(predicate).SingleOrDefault();
-    /// </summary>
-    public T SingleOrDefault<T>(Expression<Func<T, bool>> predicate, string collectionName = null)
-    {
-        return Query<T>(collectionName)
-               .Where(predicate)
-               .SingleOrDefault();
+        Dispose();
     }
 
     #endregion

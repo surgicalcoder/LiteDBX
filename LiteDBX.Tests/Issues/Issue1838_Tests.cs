@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -7,18 +8,18 @@ namespace LiteDbX.Tests.Issues;
 public class Issue1838_Tests
 {
     [Fact]
-    public void Find_ByDatetime_Offset()
+    public async Task Find_ByDatetime_Offset()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
         // sample data
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "abc",
             Timestamp = DateTimeOffset.UtcNow
         });
-        collection.Insert(new TestType
+        await collection.Insert(new TestType
         {
             Foo = "def",
             Timestamp = DateTimeOffset.UtcNow
@@ -27,9 +28,9 @@ public class Issue1838_Tests
         // filter from 1 hour in the past to 1 hour in the future
         var timeRange = TimeSpan.FromHours(2);
 
-        var result = collection // throws exception
-                     .Find(x => x.Timestamp > DateTimeOffset.UtcNow - timeRange)
-                     .ToList();
+        var result = await collection // throws exception
+                           .Find(x => x.Timestamp > DateTimeOffset.UtcNow - timeRange)
+                           .ToListAsync();
 
         Assert.NotNull(result);
         Assert.Equal(2, result.Count);

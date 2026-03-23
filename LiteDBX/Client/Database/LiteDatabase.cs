@@ -16,7 +16,7 @@ namespace LiteDbX;
 /// The former synchronous ambient-transaction API (BeginTrans/Commit/Rollback) is removed;
 /// use <see cref="BeginTransaction"/> and the returned <see cref="ILiteTransaction"/> instead.
 /// </summary>
-public class LiteDatabase : ILiteDatabase
+public class LiteDatabase : ILiteDatabase, IDisposable
 {
     private readonly ILiteEngine _engine;
     private readonly bool _disposeOnClose;

@@ -1,4 +1,5 @@
-﻿using Xunit;
+﻿using System.Threading.Tasks;
+using Xunit;
 
 namespace LiteDbX.Internals;
 
@@ -17,15 +18,16 @@ public class ExtendedLength_Tests
     }
 
     [Fact]
-    public void IndexExtendedLength_Tests()
+    public async Task IndexExtendedLength_Tests()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var col = db.GetCollection("customers", BsonAutoId.Int32);
-        col.EnsureIndex("$.Name");
-        col.Insert(new BsonDocument { ["Name"] = new string('A', 1010) });
-        col.Insert(new BsonDocument { ["Name"] = new string('B', 230) });
+        await col.EnsureIndex("$.Name");
+        await col.Insert(new BsonDocument { ["Name"] = new string('A', 1010) });
+        await col.Insert(new BsonDocument { ["Name"] = new string('B', 230) });
 
-        var results = db.Execute("select $ from customers where $.Name < 'B'").ToArray();
+        var reader = await db.Execute("select $ from customers where $.Name < 'B'");
+        var results = await reader.ToArray();
         Assert.Single(results);
     }
 }

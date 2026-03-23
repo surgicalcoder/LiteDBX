@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 
@@ -10,67 +11,57 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2471_Test
 {
     [Fact]
-    public void TestFragmentDB_FindByIDException()
+    public async Task TestFragmentDB_FindByIDException()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var collection = db.GetCollection<object>("fragtest");
 
         var fragment = new object();
-        var id = collection.Insert(fragment);
+        var id = await collection.Insert(fragment);
 
-        id.Should().BeGreaterThan(0);
+        id.AsInt32.Should().BeGreaterThan(0);
 
-        var frag2 = collection.FindById(id);
+        var frag2 = await collection.FindById(id);
         frag2.Should().NotBeNull();
 
-        var act = () => db.Checkpoint();
-
-        act.Should().NotThrow();
+        var act = async () => await db.Checkpoint();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public void MultipleReadCleansUpTransaction()
+    public async Task MultipleReadCleansUpTransaction()
     {
-        using var database = new LiteDatabase(":memory:");
-
+        await using var database = new LiteDatabase(":memory:");
         var collection = database.GetCollection("test");
-        collection.Insert(new BsonDocument { ["_id"] = 1 });
+        await collection.Insert(new BsonDocument { ["_id"] = 1 });
 
         for (var i = 0; i < 500; i++)
         {
-            collection.FindById(1);
+            await collection.FindById(1);
         }
     }
 
-    // Copied from IndexMultiKeyIndex, but this time we ensure that the lock is released by calling  db.Checkpoint()
     [Fact]
-    public void Ensure_Query_GetPlan_Releases_Lock()
+    public async Task Ensure_Query_GetPlan_Releases_Lock()
     {
-        using var db = new LiteDatabase(new MemoryStream());
+        await using var db = new LiteDatabase(new MemoryStream());
         var col = db.GetCollection<User>();
 
-        col.Insert(new User { Name = "John Doe", Phones = new[] { 1, 3, 5 }, Addresses = new List<Address> { new() { Street = "Av.1" }, new() { Street = "Av.3" } } });
-        col.Insert(new User { Name = "Joana Mark", Phones = new[] { 1, 4 }, Addresses = new List<Address> { new() { Street = "Av.3" } } });
+        await col.Insert(new User { Name = "John Doe", Phones = new[] { 1, 3, 5 }, Addresses = new List<Address> { new() { Street = "Av.1" }, new() { Street = "Av.3" } } });
+        await col.Insert(new User { Name = "Joana Mark", Phones = new[] { 1, 4 }, Addresses = new List<Address> { new() { Street = "Av.3" } } });
 
-        // create indexes
-        col.EnsureIndex(x => x.Phones);
-        col.EnsureIndex(x => x.Addresses.Select(z => z.Street));
+        await col.EnsureIndex(x => x.Phones);
+        await col.EnsureIndex(x => x.Addresses.Select(z => z.Street));
 
-        // testing indexes expressions
-        var indexes = db.GetCollection("$indexes").FindAll().ToArray();
-
+        var indexes = await db.GetCollection("$indexes").FindAll().ToArrayAsync();
         indexes[1]["expression"].AsString.Should().Be("$.Phones[*]");
         indexes[2]["expression"].AsString.Should().Be("MAP($.Addresses[*]=>@.Street)");
 
-        // doing Phone query
-        var queryPhone = col.Query()
-                            .Where(x => x.Phones.Contains(3));
+        var queryPhone = col.Query().Where(x => x.Phones.Contains(3));
+        await queryPhone.GetPlan();
 
-        var planPhone = queryPhone.GetPlan();
-
-        var act = () => db.Checkpoint();
-
-        act.Should().NotThrow();
+        var act = async () => await db.Checkpoint();
+        await act.Should().NotThrowAsync();
     }
 
     #region Model

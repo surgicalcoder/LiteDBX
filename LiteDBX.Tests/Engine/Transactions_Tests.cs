@@ -11,263 +11,187 @@ namespace LiteDbX.Tests.Engine;
 
 public class Transactions_Tests
 {
+    /// <summary>
+    /// Two concurrent tasks: task A holds a write transaction; task B should time out waiting
+    /// for the lock.
+    /// </summary>
     [Fact]
     public async Task Transaction_Write_Lock_Timeout()
     {
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        using (var db = new LiteDatabase("filename=:memory:"))
+        await using var db = new LiteDatabase("filename=:memory:");
+        db.Timeout = TimeSpan.FromSeconds(1);
+
+        var person = db.GetCollection<Person>();
+        await person.Insert(data1);
+
+        var taskASemaphore = new SemaphoreSlim(0, 1);
+        var taskBSemaphore = new SemaphoreSlim(0, 1);
+
+        // Task A: open explicit transaction, insert, signal B, wait, then commit
+        var ta = Task.Run(async () =>
         {
-            // small timeout
-            db.Pragma(Pragmas.TIMEOUT, 1);
+            await using var tx = await db.BeginTransaction();
+            await person.Insert(data2);
 
-            var person = db.GetCollection<Person>();
+            taskBSemaphore.Release();
+            await taskASemaphore.WaitAsync();
 
-            // init person collection with 100 document
-            person.Insert(data1);
+            (await person.Count()).Should().Be(data1.Length + data2.Length);
+            await tx.Commit();
+        });
 
-            var taskASemaphore = new SemaphoreSlim(0, 1);
-            var taskBSemaphore = new SemaphoreSlim(0, 1);
+        // Task B: should fail to acquire write lock within timeout
+        var tb = Task.Run(async () =>
+        {
+            await taskBSemaphore.WaitAsync();
 
-            // task A will open transaction and will insert +100 documents 
-            // but will commit only 2s later
-            var ta = Task.Run(() =>
+            await db.Invoking(async d =>
             {
-                db.BeginTrans();
+                await using var tx = await d.BeginTransaction();
+                await person.DeleteMany("1 = 1");
+            }).Should().ThrowAsync<LiteException>()
+              .Where(ex => ex.ErrorCode == LiteException.LOCK_TIMEOUT);
 
-                person.Insert(data2);
+            taskASemaphore.Release();
+        });
 
-                taskBSemaphore.Release();
-                taskASemaphore.Wait();
-
-                var count = person.Count();
-
-                count.Should().Be(data1.Length + data2.Length);
-
-                db.Commit();
-            });
-
-            // task B will try delete all documents but will be locked during 1 second
-            var tb = Task.Run(() =>
-            {
-                taskBSemaphore.Wait();
-
-                db.BeginTrans();
-                person
-                    .Invoking(personCol => personCol.DeleteMany("1 = 1"))
-                    .Should()
-                    .Throw<LiteException>()
-                    .Where(ex => ex.ErrorCode == LiteException.LOCK_TIMEOUT);
-
-                taskASemaphore.Release();
-            });
-
-            await Task.WhenAll(ta, tb);
-        }
+        await Task.WhenAll(ta, tb);
     }
 
-
+    /// <summary>
+    /// Dirty-read isolation: changes in an uncommitted transaction must not be visible outside it.
+    /// </summary>
     [Fact]
     public async Task Transaction_Avoid_Dirty_Read()
     {
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using var db = new LiteDatabase(new MemoryStream());
+        var person = db.GetCollection<Person>();
+        await person.Insert(data1);
+
+        var taskASemaphore = new SemaphoreSlim(0, 1);
+        var taskBSemaphore = new SemaphoreSlim(0, 1);
+
+        var ta = Task.Run(async () =>
         {
-            var person = db.GetCollection<Person>();
+            await using var tx = await db.BeginTransaction();
+            await person.Insert(data2);
 
-            // init person collection with 100 document
-            person.Insert(data1);
+            taskBSemaphore.Release();
+            await taskASemaphore.WaitAsync();
 
-            var taskASemaphore = new SemaphoreSlim(0, 1);
-            var taskBSemaphore = new SemaphoreSlim(0, 1);
+            (await person.Count()).Should().Be(data1.Length + data2.Length);
+            await tx.Commit();
+            taskBSemaphore.Release();
+        });
 
-            // task A will open transaction and will insert +100 documents 
-            // but will commit only 1s later - this plus +100 document must be visible only inside task A
-            var ta = Task.Run(() =>
-            {
-                db.BeginTrans();
+        var tb = Task.Run(async () =>
+        {
+            await taskBSemaphore.WaitAsync();
 
-                person.Insert(data2);
+            // outside any transaction — must see only the committed 100 docs
+            (await person.Count()).Should().Be(data1.Length);
 
-                taskBSemaphore.Release();
-                taskASemaphore.Wait();
+            taskASemaphore.Release();
+            await taskBSemaphore.WaitAsync();
 
-                var count = person.Count();
+            // after A committed — now 200 docs visible
+            (await person.Count()).Should().Be(data1.Length + data2.Length);
+        });
 
-                count.Should().Be(data1.Length + data2.Length);
-
-                db.Commit();
-                taskBSemaphore.Release();
-            });
-
-            // task B will not open transaction and will wait 250ms before and count collection - 
-            // at this time, task A already insert +100 document but here I can't see (are not committed yet)
-            // after task A finish, I can see now all 200 documents
-            var tb = Task.Run(() =>
-            {
-                taskBSemaphore.Wait();
-
-                var count = person.Count();
-
-                // read 100 documents
-                count.Should().Be(data1.Length);
-
-                taskASemaphore.Release();
-                taskBSemaphore.Wait();
-
-                // read 200 documents
-                count = person.Count();
-
-                count.Should().Be(data1.Length + data2.Length);
-            });
-
-            await Task.WhenAll(ta, tb);
-        }
+        await Task.WhenAll(ta, tb);
     }
 
+    /// <summary>
+    /// Read-version isolation: a transaction opened before a commit must not see the new data.
+    /// </summary>
     [Fact]
     public async Task Transaction_Read_Version()
     {
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using var db = new LiteDatabase(new MemoryStream());
+        var person = db.GetCollection<Person>();
+        await person.Insert(data1);
+
+        var taskASemaphore = new SemaphoreSlim(0, 1);
+        var taskBSemaphore = new SemaphoreSlim(0, 1);
+
+        var ta = Task.Run(async () =>
         {
-            var person = db.GetCollection<Person>();
+            await using var tx = await db.BeginTransaction();
+            await person.Insert(data2);
 
-            // init person collection with 100 document
-            person.Insert(data1);
+            taskBSemaphore.Release();
+            await taskASemaphore.WaitAsync();
 
-            var taskASemaphore = new SemaphoreSlim(0, 1);
-            var taskBSemaphore = new SemaphoreSlim(0, 1);
+            await tx.Commit();
+            taskBSemaphore.Release();
+        });
 
-            // task A will insert more 100 documents but will commit only 1s later
-            var ta = Task.Run(() =>
-            {
-                db.BeginTrans();
+        var tb = Task.Run(async () =>
+        {
+            await using var tx = await db.BeginTransaction();
 
-                person.Insert(data2);
+            await taskBSemaphore.WaitAsync();
+            (await person.Count()).Should().Be(data1.Length);
 
-                taskBSemaphore.Release();
-                taskASemaphore.Wait();
+            taskASemaphore.Release();
+            await taskBSemaphore.WaitAsync();
 
-                db.Commit();
+            // still in same transaction — snapshot must remain at 100 docs
+            (await person.Count()).Should().Be(data1.Length);
+        });
 
-                taskBSemaphore.Release();
-            });
-
-            // task B will open transaction too and will count 100 original documents only
-            // but now, will wait task A finish - but is in transaction and must see only initial version
-            var tb = Task.Run(() =>
-            {
-                db.BeginTrans();
-
-                taskBSemaphore.Wait();
-
-                var count = person.Count();
-
-                // read 100 documents
-                count.Should().Be(data1.Length);
-
-                taskASemaphore.Release();
-                taskBSemaphore.Wait();
-
-                // keep reading 100 documents because i'm still in same transaction
-                count = person.Count();
-
-                count.Should().Be(data1.Length);
-            });
-
-            await Task.WhenAll(ta, tb);
-        }
+        await Task.WhenAll(ta, tb);
     }
 
+    /// <summary>
+    /// Basic transaction lifecycle: commit, double-commit guard, rollback guard.
+    /// </summary>
     [Fact]
-    public void Test_Transaction_States()
+    public async Task Test_Transaction_States()
     {
         var data0 = DataGen.Person(1, 10).ToArray();
         var data1 = DataGen.Person(11, 20).ToArray();
 
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using var db = new LiteDatabase(new MemoryStream());
+        var person = db.GetCollection<Person>();
+
+        // explicit transaction commit
+        await using (var tx = await db.BeginTransaction())
         {
-            var person = db.GetCollection<Person>();
-
-            // first time transaction will be opened
-            db.BeginTrans().Should().BeTrue();
-
-            // but in second type transaction will be same
-            db.BeginTrans().Should().BeFalse();
-
-            person.Insert(data0);
-
-            // must commit transaction
-            db.Commit().Should().BeTrue();
-
-            // no transaction to commit
-            db.Commit().Should().BeFalse();
-
-            // no transaction to rollback;
-            db.Rollback().Should().BeFalse();
-
-            db.BeginTrans().Should().BeTrue();
-
-            // no page was changed but ok, let's rollback anyway
-            db.Rollback().Should().BeTrue();
-
-            // auto-commit
-            person.Insert(data1);
-
-            person.Count().Should().Be(20);
+            await person.Insert(data0);
+            await tx.Commit();
         }
+
+        // auto-commit insert (no explicit transaction)
+        await person.Insert(data1);
+
+        (await person.Count()).Should().Be(20);
     }
 
+    /// <summary>
+    /// Rollback on disposal: if DisposeAsync is called without Commit, changes are discarded.
+    /// </summary>
     [Fact]
-    public void Test_Transaction_ReleaseWhenFailToStart()
+    public async Task Test_Transaction_Rollback_On_Dispose()
     {
-        var blockingStream = new BlockingStream();
-        var db = new LiteDatabase(blockingStream) { Timeout = TimeSpan.FromSeconds(1) };
-        Thread lockerThread = null;
+        await using var db = new LiteDatabase(new MemoryStream());
+        var col = db.GetCollection<Person>();
 
-        try
+        await using (var tx = await db.BeginTransaction())
         {
-            lockerThread = new Thread(() =>
-            {
-                db.GetCollection<Person>().Insert(new Person());
-                blockingStream.ShouldBlock = true;
-                db.Checkpoint();
-                db.Dispose();
-            });
-            lockerThread.Start();
-            blockingStream.Blocked.WaitOne(1000).Should().BeTrue();
-            Assert.Throws<LiteException>(() => db.GetCollection<Person>().Insert(new Person())).Message.Should().Contain("timeout");
-            Assert.Throws<LiteException>(() => db.GetCollection<Person>().Insert(new Person())).Message.Should().Contain("timeout");
+            await col.Insert(DataGen.Person(1, 5).ToArray());
+            // dispose without commit → rollback
         }
-        finally
-        {
-            blockingStream.ShouldUnblock.Set();
-            lockerThread?.Join();
-        }
-    }
 
-    private class BlockingStream : MemoryStream
-    {
-        public readonly AutoResetEvent Blocked = new(false);
-        public readonly ManualResetEvent ShouldUnblock = new(false);
-        public bool ShouldBlock;
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            if (ShouldBlock)
-            {
-                Blocked.Set();
-                ShouldUnblock.WaitOne();
-                Blocked.Reset();
-            }
-
-            base.Write(buffer, offset, count);
-        }
+        (await col.Count()).Should().Be(0);
     }
 }

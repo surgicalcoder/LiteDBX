@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -7,20 +8,16 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2265_Tests
 {
     [Fact]
-    public void Test()
+    public async Task Test()
     {
-        using (var db = new LiteDatabase(":memory:"))
+        await using var db = new LiteDatabase(":memory:");
+        var c = db.GetCollection<Weights>("weights");
+        var w = await c.FindOne(x => true);
+
+        if (w == null)
         {
-            var c = db.GetCollection<Weights>("weights");
-            var w = c.FindOne(x => true);
-
-            if (w == null)
-            {
-                w = new Weights();
-                c.Insert(w);
-            }
-
-            //return w;
+            w = new Weights();
+            await c.Insert(w);
         }
     }
 

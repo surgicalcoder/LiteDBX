@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Database;
@@ -6,28 +7,24 @@ namespace LiteDbX.Tests.Database;
 public class MissingIdDocTest
 {
     [Fact]
-    public void MissingIdDoc_Test()
+    public async Task MissingIdDoc_Test()
     {
-        using (var file = new TempFile())
-        {
-            using (var db = new LiteDatabase(file.Filename))
-            {
-                var col = db.GetCollection<MissingIdDoc>("col");
+        using var file = new TempFile();
+        await using var db = new LiteDatabase(file.Filename);
+        var col = db.GetCollection<MissingIdDoc>("col");
 
-                var p = new MissingIdDoc { Name = "John", Age = 39 };
+        var p = new MissingIdDoc { Name = "John", Age = 39 };
 
-                // ObjectID will be generated 
-                var id = col.Insert(p);
+        // ObjectID will be generated
+        var id = await col.Insert(p);
 
-                p.Age = 41;
+        p.Age = 41;
 
-                col.Update(id, p);
+        await col.Update(id, p);
 
-                var r = col.FindById(id);
+        var r = await col.FindById(id);
 
-                r.Name.Should().Be(p.Name);
-            }
-        }
+        r.Name.Should().Be(p.Name);
     }
 
     #region Model

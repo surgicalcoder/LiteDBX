@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using LiteDbX.Engine;
 using Xunit;
@@ -10,7 +11,7 @@ namespace LiteDbX.Tests.Engine
     public class Rebuild_Crash_Tests
     {
         [Fact]
-        public void Rebuild_Crash_IO_Write_Error()
+        public async Task Rebuild_Crash_IO_Write_Error()
         {
             var N = 1_000;
 
@@ -49,17 +50,14 @@ namespace LiteDbX.Tests.Engine
                             }
                         };
 
-                        db.Pragma("USER_VERSION", 123);
-
-                        db.EnsureIndex("col1", "idx_age", "$.age", false);
-
-                        db.Insert("col1", data, BsonAutoId.Int32);
-                        db.Insert("col2", data, BsonAutoId.Int32);
-
-                        db.Checkpoint();
+                        await db.Pragma("USER_VERSION", 123);
+                        await db.EnsureIndex("col1", "idx_age", "$.age", false);
+                        await db.Insert("col1", data, BsonAutoId.Int32);
+                        await db.Insert("col2", data, BsonAutoId.Int32);
+                        await db.Checkpoint();
 
                         // will fail
-                        var col1 = db.Query("col1", Query.All()).ToList().Count;
+                        var col1 = (await db.Query("col1", Query.All()).ToListAsync()).Count;
 
                         // never run here
                         Assert.Fail("should get error in query");
@@ -70,13 +68,11 @@ namespace LiteDbX.Tests.Engine
                     Assert.True(ex is LiteException lex && lex.ErrorCode == 999);
                 }
 
-                //Console.WriteLine("Recovering database...");
-
                 using (var db = new LiteEngine(settings))
                 {
-                    var col1 = db.Query("col1", Query.All()).ToList().Count;
-                    var col2 = db.Query("col2", Query.All()).ToList().Count;
-                    var errors = db.Query("_rebuild_errors", Query.All()).ToList().Count;
+                    var col1 = (await db.Query("col1", Query.All()).ToListAsync()).Count;
+                    var col2 = (await db.Query("col2", Query.All()).ToListAsync()).Count;
+                    var errors = (await db.Query("_rebuild_errors", Query.All()).ToListAsync()).Count;
 
                     col1.Should().Be(N - 1);
                     col2.Should().Be(N);

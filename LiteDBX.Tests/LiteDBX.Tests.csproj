@@ -19,23 +19,23 @@
     </ItemGroup>
 
     <ItemGroup Condition="'$(Configuration)' == 'Release'">
-        <Compile Remove="Internals\**"/>
+        <Compile Remove="Internals\**" />
     </ItemGroup>
 
     <ItemGroup>
-        <EmbeddedResource Include="Resources\person.json"/>
-        <EmbeddedResource Include="Resources\zip.json"/>
+        <EmbeddedResource Include="Resources\person.json" />
+        <EmbeddedResource Include="Resources\zip.json" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="FluentAssertions" Version="6.12.2"/>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0"/>
-        <PackageReference Include="xunit" Version="2.9.2"/>
+        <PackageReference Include="FluentAssertions" Version="6.12.2" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+        <PackageReference Include="xunit" Version="2.9.2" />
         <PackageReference Include="xunit.runner.console" Version="2.9.2">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="xunit.runner.reporters" Version="2.9.2"/>
+        <PackageReference Include="xunit.runner.reporters" Version="2.9.2" />
         <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -43,7 +43,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\LiteDBX\LiteDBX.csproj"/>
+        <ProjectReference Include="..\LiteDBX\LiteDBX.csproj" />
     </ItemGroup>
 
 </Project>

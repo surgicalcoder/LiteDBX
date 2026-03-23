@@ -17,7 +17,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\LiteDBX\LiteDBX.csproj"/>
+        <ProjectReference Include="..\LiteDBX\LiteDBX.csproj" />
     </ItemGroup>
 
 </Project>

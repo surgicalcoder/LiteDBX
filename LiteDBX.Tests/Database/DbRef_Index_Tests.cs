@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using FluentAssertions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Database;
@@ -7,7 +8,7 @@ namespace LiteDbX.Tests.Database;
 public class DbRef_Index_Tests
 {
     [Fact]
-    public void DbRef_Index()
+    public async Task DbRef_Index()
     {
         var mapper = new BsonMapper();
 
@@ -20,27 +21,23 @@ public class DbRef_Index_Tests
               .Field(x => x.Customer, "cust")
               .DbRef(x => x.Customer, "customers");
 
-        using (var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream()))
-        {
-            var customer = new Customer { Login = "jd", Name = "John Doe" };
-            var order = new Order { Customer = customer };
+        await using var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream());
+        var customer = new Customer { Login = "jd", Name = "John Doe" };
+        var order = new Order { Customer = customer };
 
-            var customers = db.GetCollection<Customer>("Customers");
-            var orders = db.GetCollection<Order>("Orders");
+        var customers = db.GetCollection<Customer>("Customers");
+        var orders = db.GetCollection<Order>("Orders");
 
-            customers.Insert(customer);
-            orders.Insert(order);
+        await customers.Insert(customer);
+        await orders.Insert(order);
 
-            // create an index in Customer.Id ref
-            // x.Customer.Login == "Customer.$id"
-            orders.EnsureIndex(x => x.Customer.Login);
+        await orders.EnsureIndex(x => x.Customer.Login);
 
-            var query = orders
-                        .Include(x => x.Customer)
-                        .FindOne(x => x.Customer.Login == "jd");
+        var query = await orders
+                          .Include(x => x.Customer)
+                          .FindOne(x => x.Customer.Login == "jd");
 
-            query.Customer.Name.Should().Be(customer.Name);
-        }
+        query.Customer.Name.Should().Be(customer.Name);
     }
 
     #region Model

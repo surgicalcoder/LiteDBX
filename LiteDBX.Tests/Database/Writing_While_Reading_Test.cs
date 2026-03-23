@@ -1,42 +1,40 @@
-﻿using Xunit;
+﻿using System.Threading.Tasks;
+using Xunit;
 
 namespace LiteDbX.Tests.Database;
 
 public class Writing_While_Reading_Test
 {
     [Fact]
-    public void Test()
+    public async Task Test()
     {
         using var f = new TempFile();
 
-        using (var db = new LiteDatabase(f.Filename))
+        await using (var db = new LiteDatabase(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
-            col.Insert(new MyClass { Name = "John", Description = "Doe" });
-            col.Insert(new MyClass { Name = "Joana", Description = "Doe" });
-            col.Insert(new MyClass { Name = "Doe", Description = "Doe" });
+            await col.Insert(new MyClass { Name = "John", Description = "Doe" });
+            await col.Insert(new MyClass { Name = "Joana", Description = "Doe" });
+            await col.Insert(new MyClass { Name = "Doe", Description = "Doe" });
         }
 
-
-        using (var db = new LiteDatabase(f.Filename))
+        await using (var db = new LiteDatabase(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
 
-            foreach (var item in col.FindAll())
+            await foreach (var item in col.FindAll())
             {
                 item.Description += " Changed";
-                col.Update(item);
+                await col.Update(item);
             }
-
-            db.Commit();
+            // no explicit transaction needed; each write auto-commits
         }
 
-
-        using (var db = new LiteDatabase(f.Filename))
+        await using (var db = new LiteDatabase(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
 
-            foreach (var item in col.FindAll())
+            await foreach (var item in col.FindAll())
             {
                 Assert.EndsWith("Changed", item.Description);
             }
@@ -46,7 +44,6 @@ public class Writing_While_Reading_Test
     private class MyClass
     {
         public int Id { get; set; }
-
         public string Name { get; set; }
 
         public string Description { get; set; }

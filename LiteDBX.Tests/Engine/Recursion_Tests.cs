@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Engine;
@@ -6,45 +7,45 @@ namespace LiteDbX.Tests.Engine;
 public class Recursion_Tests
 {
     [Fact]
-    public void UpdateInFindAll()
+    public async Task UpdateInFindAll()
     {
-        Test(collection =>
+        await Test(async collection =>
         {
-            foreach (var document in collection.FindAll())
+            await foreach (var document in collection.FindAll())
             {
-                collection.Update(document);
+                await collection.Update(document);
             }
         });
     }
 
     [Fact]
-    public void InsertDeleteInFindAll()
+    public async Task InsertDeleteInFindAll()
     {
-        Test(collection =>
+        await Test(async collection =>
         {
-            foreach (var document in collection.FindAll())
+            await foreach (var document in collection.FindAll())
             {
-                var id = collection.Insert(new BsonDocument());
-                collection.Delete(id);
+                var id = await collection.Insert(new BsonDocument());
+                await collection.Delete(id);
             }
         });
     }
 
     [Fact]
-    public void QueryInFindAll()
+    public async Task QueryInFindAll()
     {
-        Test(collection =>
+        await Test(async collection =>
         {
-            foreach (var document in collection.FindAll())
+            await foreach (var document in collection.FindAll())
             {
-                collection.Query().Count();
+                await collection.Query().Count();
             }
         });
     }
 
-    private void Test(Action<ILiteCollection<BsonDocument>> action)
+    private static async Task Test(Func<ILiteCollection<BsonDocument>, Task> action)
     {
-        using LiteDatabase database = new(new ConnectionString
+        await using var database = new LiteDatabase(new ConnectionString
         {
             Filename = "Demo.db",
             Connection = ConnectionType.Shared
@@ -52,13 +53,13 @@ public class Recursion_Tests
 
         var accounts = database.GetCollection("Recursion");
 
-        if (accounts.Count() < 3)
+        if (await accounts.Count() < 3)
         {
-            accounts.Insert(new BsonDocument());
-            accounts.Insert(new BsonDocument());
-            accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
+            await accounts.Insert(new BsonDocument());
         }
 
-        action(accounts);
+        await action(accounts);
     }
 }

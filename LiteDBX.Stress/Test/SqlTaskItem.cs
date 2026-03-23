@@ -21,9 +21,15 @@ public class SqlTaskItem : ITestItem
 
     public BsonValue Execute(LiteDatabase db)
     {
-        using (var reader = db.Execute(Sql))
+        // ITestItem.Execute is a sync interface; bridge to async via GetAwaiter().GetResult()
+        var reader = db.Execute(Sql).GetAwaiter().GetResult();
+        try
         {
-            return reader.FirstOrDefault();
+            return reader.FirstOrDefault().GetAwaiter().GetResult();
+        }
+        finally
+        {
+            reader.DisposeAsync().GetAwaiter().GetResult();
         }
     }
 }

@@ -13,7 +13,6 @@ public partial class LiteEngine
             {
                 yield return new BsonDocument
                 {
-                    ["threadID"] = transaction.ThreadID,
                     ["transactionID"] = (int)transaction.TransactionID,
                     ["elapsedMS"] = (int)cursor.Elapsed.ElapsedMilliseconds,
                     ["collection"] = cursor.Collection,

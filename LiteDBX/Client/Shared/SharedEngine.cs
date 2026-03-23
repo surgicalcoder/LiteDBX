@@ -17,7 +17,7 @@ namespace LiteDbX;
 ///   <c>WaitOne()</c> call, which violates the async-only architecture rule that no
 ///   blocking waits may exist in operational paths.
 ///
-///   The <see cref="Mutex"/> has been replaced with a <see cref="SemaphoreSlim(1,1)"/>
+///   The <see cref="Mutex"/> has been replaced with a <c>SemaphoreSlim(1,1)</c>
 ///   whose <see cref="SemaphoreSlim.WaitAsync()"/> is used in all operational paths,
 ///   eliminating thread-blocking from the async runtime path.
 ///

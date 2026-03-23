@@ -204,7 +204,8 @@ public class LiteStorage<TFileId> : ILiteStorage<TFileId>
         if (filename.IsNullOrWhiteSpace()) throw new ArgumentNullException(nameof(filename));
 
         // File.OpenRead uses a FileStream; wrap the open in a using so the OS handle is released.
-        await using var fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
+        // Note: FileStream does not implement IAsyncDisposable on netstandard2.0 — use sync using.
+        using var fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: LiteFileHandle<TFileId>.MaxChunkSize, useAsync: true);
 
         return await Upload(id, Path.GetFileName(filename), fs, null, cancellationToken).ConfigureAwait(false);
@@ -262,7 +263,8 @@ public class LiteStorage<TFileId> : ILiteStorage<TFileId>
 
         var fileMode = overwritten ? FileMode.Create : FileMode.CreateNew;
 
-        await using var fs = new FileStream(filename, fileMode, FileAccess.Write, FileShare.None,
+        // Note: FileStream does not implement IAsyncDisposable on netstandard2.0 — use sync using.
+        using var fs = new FileStream(filename, fileMode, FileAccess.Write, FileShare.None,
             bufferSize: LiteFileHandle<TFileId>.MaxChunkSize, useAsync: true);
 
         return await Download(id, fs, cancellationToken).ConfigureAwait(false);

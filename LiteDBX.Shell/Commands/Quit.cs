@@ -1,4 +1,6 @@
-﻿namespace LiteDbX.Shell.Commands;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell.Commands;
 
 [Help(
     Name = "quit",
@@ -12,9 +14,13 @@ internal class Quit : IShellCommand
         return s.Match(@"(quit|exit)$");
     }
 
-    public void Execute(StringScanner s, Env env)
+    public async ValueTask Execute(StringScanner s, Env env)
     {
-        env.Database?.Dispose();
+        if (env.Database != null)
+        {
+            await env.Database.DisposeAsync();
+            env.Database = null;
+        }
         env.Input.Running = false;
     }
 }

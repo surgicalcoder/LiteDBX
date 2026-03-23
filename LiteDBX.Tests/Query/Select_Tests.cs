@@ -1,90 +1,86 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 
 namespace LiteDbX.Tests.QueryTest;
 
-public class Select_Tests : PersonQueryData
+public class Select_Tests
 {
     [Fact]
-    public void Query_Select_Key_Only()
+    public async Task Query_Select_Key_Only()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, local) = db.GetData();
 
-        collection.EnsureIndex(x => x.Address.City);
+        await collection.EnsureIndex(x => x.Address.City);
 
-        // must orderBy mem data because index will be sorted
-        var r0 = local
-                 .OrderBy(x => x.Address.City)
-                 .Select(x => x.Address.City)
-                 .ToArray();
-
-        // this query will not deserialize document, using only index key
-        var r1 = collection.Query()
-                           .OrderBy(x => x.Address.City)
-                           .Select(x => x.Address.City)
-                           .ToArray();
+        var r0 = local.OrderBy(x => x.Address.City).Select(x => x.Address.City).ToArray();
+        var r1 = await collection.Query()
+                                  .OrderBy(x => x.Address.City)
+                                  .Select(x => x.Address.City)
+                                  .ToArray();
 
         r0.Should().Equal(r1);
     }
 
     [Fact]
-    public void Query_Select_New_Document()
+    public async Task Query_Select_New_Document()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, local) = db.GetData();
 
         var r0 = local
-                 .Select(x => new { city = x.Address.City.ToUpper(), phone0 = x.Phones[0], address = new Address { Street = x.Name } })
-                 .ToArray();
+            .Select(x => new { city = x.Address.City.ToUpper(), phone0 = x.Phones[0], address = new Address { Street = x.Name } })
+            .ToArray();
 
-        var r1 = collection.Query()
-                           .Select(x => new { city = x.Address.City.ToUpper(), phone0 = x.Phones[0], address = new Address { Street = x.Name } })
-                           .ToArray();
+        var r1 = await collection.Query()
+            .Select(x => new { city = x.Address.City.ToUpper(), phone0 = x.Phones[0], address = new Address { Street = x.Name } })
+            .ToArray();
 
-        foreach (var r in r0.Zip(r1, (l, r) => new { left = l, right = r }))
+        foreach (var r in r0.Zip(r1, (l, rr) => (l, rr)))
         {
-            r.right.city.Should().Be(r.left.city);
-            r.right.phone0.Should().Be(r.left.phone0);
-            r.right.address.Street.Should().Be(r.left.address.Street);
+            r.rr.city.Should().Be(r.l.city);
+            r.rr.phone0.Should().Be(r.l.phone0);
+            r.rr.address.Street.Should().Be(r.l.address.Street);
         }
     }
 
     [Fact]
-    public void Query_Or_With_Null()
+    public async Task Query_Or_With_Null()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, _) = db.GetData();
 
         var r = collection.Find(Query.Or(
             Query.GTE("Date", new DateTime(2001, 1, 1)),
-            Query.EQ("Date", null)
-        ));
+            Query.EQ("Date", null)));
+        // verify it streams without exception
+        await foreach (var _ in r) { }
     }
 
     [Fact]
-    public void Query_Find_All_Predicate()
+    public async Task Query_Find_All_Predicate()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, _) = db.GetData();
 
-        var r = collection.Find(x => true).ToArray();
-
+        var r = await collection.Find(x => true).ToListAsync();
         r.Should().HaveCount(1000);
     }
 
     [Fact]
-    public void Query_With_No_Collection()
+    public async Task Query_With_No_Collection()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
 
-        using (var r = db.Execute("SELECT DAY(NOW()) as DIA"))
+        var reader = await db.Execute("SELECT DAY(NOW()) as DIA");
+        await using (reader)
         {
-            while (r.Read())
+            while (await reader.Read())
             {
-                r.Current["DIA"].Should().Be(DateTime.Now.Day);
+                reader.Current["DIA"].Should().Be(DateTime.Now.Day);
             }
         }
     }

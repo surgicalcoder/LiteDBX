@@ -1,26 +1,40 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Tests.QueryTest;
 
-public class PersonQueryData : IDisposable
+/// <summary>
+/// Async-only test fixture for query tests.
+/// Use <see cref="CreateAsync"/> rather than the constructor.
+/// Implements <see cref="IAsyncDisposable"/> — use <c>await using</c>.
+/// </summary>
+public class PersonQueryData : IAsyncDisposable
 {
     private readonly ILiteCollection<Person> _collection;
     private readonly ILiteDatabase _db;
     private readonly Person[] _local;
 
-    public PersonQueryData()
+    private PersonQueryData(ILiteDatabase db, ILiteCollection<Person> collection, Person[] local)
     {
-        _local = DataGen.Person().ToArray();
-
-        _db = new LiteDatabase(":memory:");
-        _collection = _db.GetCollection<Person>("person");
-        _collection.Insert(_local);
+        _db = db;
+        _collection = collection;
+        _local = local;
     }
 
-    public void Dispose()
+    /// <summary>Create and populate the in-memory test database.</summary>
+    public static async ValueTask<PersonQueryData> CreateAsync()
     {
-        _db.Dispose();
+        var local = DataGen.Person().ToArray();
+        var db = new LiteDatabase(":memory:");
+        var collection = db.GetCollection<Person>("person");
+        await collection.Insert(local);
+        return new PersonQueryData(db, collection, local);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _db.DisposeAsync();
     }
 
     public (ILiteCollection<Person>, Person[]) GetData()

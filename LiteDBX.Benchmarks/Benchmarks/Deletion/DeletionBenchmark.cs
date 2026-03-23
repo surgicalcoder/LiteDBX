@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using LiteDbX.Benchmarks.Models;
 using LiteDbX.Benchmarks.Models.Generators;
@@ -14,70 +15,69 @@ namespace LiteDbX.Benchmarks.Benchmarks.Deletion
         private ILiteCollection<FileMetaBase> _fileMetaCollection;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-
             DatabaseInstance = new LiteDatabase(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
-            _fileMetaCollection.EnsureIndex(file => file.IsFavorite);
-            _fileMetaCollection.EnsureIndex(file => file.ShouldBeShown);
-
+            await _fileMetaCollection.EnsureIndex(file => file.IsFavorite);
+            await _fileMetaCollection.EnsureIndex(file => file.ShouldBeShown);
             _data = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize);
         }
 
         [IterationSetup]
-        public void IterationSetup()
+        public async Task IterationSetup()
         {
-            _fileMetaCollection.Insert(_data);
-            DatabaseInstance.Checkpoint();
+            await _fileMetaCollection.Insert(_data);
+            await DatabaseInstance.Checkpoint();
         }
 
         [Benchmark(Baseline = true)]
-        public int DeleteAllExpression()
+        public async Task<int> DeleteAllExpression()
         {
-            var count = _fileMetaCollection.DeleteMany(_ => true);
-            DatabaseInstance.Checkpoint();
-
+            var count = await _fileMetaCollection.DeleteMany(_ => true);
+            await DatabaseInstance.Checkpoint();
             return count;
         }
 
         [Benchmark]
-        public int DeleteAllBsonExpression()
+        public async Task<int> DeleteAllBsonExpression()
         {
-            var count = _fileMetaCollection.DeleteMany("1 = 1");
-            DatabaseInstance.Checkpoint();
-
+            var count = await _fileMetaCollection.DeleteMany("1 = 1");
+            await DatabaseInstance.Checkpoint();
             return count;
         }
 
         [Benchmark]
-        public void DropCollectionAndRecreate()
+        public async Task DropCollectionAndRecreate()
         {
             const string collectionName = nameof(FileMetaBase);
 
             var indexesCollection = DatabaseInstance.GetCollection("$indexes");
-            var droppedCollectionIndexes = indexesCollection.Query().Where(x => x["collection"] == collectionName && x["name"] != "_id").ToDocuments().ToList();
+            var droppedIndexes = await indexesCollection.Query()
+                .Where(x => x["collection"] == collectionName && x["name"] != "_id")
+                .ToDocuments().ToListAsync();
 
-            DatabaseInstance.DropCollection(collectionName);
+            await DatabaseInstance.DropCollection(collectionName);
 
-            foreach (var indexInfo in droppedCollectionIndexes)
+            foreach (var indexInfo in droppedIndexes)
             {
-                DatabaseInstance.GetCollection(collectionName)
-                                .EnsureIndex(indexInfo["name"], BsonExpression.Create(indexInfo["expression"]), indexInfo["unique"]);
+                await DatabaseInstance.GetCollection(collectionName)
+                    .EnsureIndex(indexInfo["name"], BsonExpression.Create(indexInfo["expression"]), indexInfo["unique"]);
             }
 
-            DatabaseInstance.Checkpoint();
+            await DatabaseInstance.Checkpoint();
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public async Task GlobalCleanup()
         {
-            // Disposing logic
-            DatabaseInstance?.Checkpoint();
-            DatabaseInstance?.Dispose();
-            DatabaseInstance = null;
-
+            if (DatabaseInstance != null)
+            {
+                await DatabaseInstance.Checkpoint();
+                await DatabaseInstance.DisposeAsync();
+                DatabaseInstance = null;
+            }
             File.Delete(DatabasePath);
         }
     }

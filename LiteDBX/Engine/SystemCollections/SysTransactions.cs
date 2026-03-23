@@ -11,7 +11,6 @@ public partial class LiteEngine
         {
             yield return new BsonDocument
             {
-                ["threadID"] = transaction.ThreadID,
                 ["transactionID"] = (int)transaction.TransactionID,
                 ["startTime"] = transaction.StartTime,
                 ["mode"] = transaction.Mode.ToString(),

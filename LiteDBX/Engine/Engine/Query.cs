@@ -57,7 +57,7 @@ public partial class LiteEngine
             this, _state, _monitor, _sortDisk, _disk, _header.Pragmas,
             collection, query, source);
 
-        await foreach (var doc in exec.ExecuteQuery(cancellationToken).ConfigureAwait(false))
+        await foreach (var doc in exec.ExecuteQuery(cancellationToken))
         {
             yield return doc;
         }

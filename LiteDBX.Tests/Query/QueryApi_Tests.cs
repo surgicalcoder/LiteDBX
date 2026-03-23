@@ -1,33 +1,32 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.QueryTest;
 
-public class QueryApi_Tests : PersonQueryData
+public class QueryApi_Tests
 {
     [Fact]
-    public void Query_And()
+    public async Task Query_And()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, local) = db.GetData();
 
         var r0 = local.Where(x => x.Age == 22 && x.Active).ToArray();
+        var r1 = await collection.Find(Query.And(Query.EQ("Age", 22), Query.EQ("Active", true))).ToListAsync();
 
-        var r1 = collection.Find(Query.And(Query.EQ("Age", 22), Query.EQ("Active", true))).ToArray();
-
-        AssertEx.ArrayEqual(r0, r1, true);
+        AssertEx.ArrayEqual(r0, r1.ToArray(), true);
     }
 
     [Fact]
-    public void Query_And_Same_Field()
+    public async Task Query_And_Same_Field()
     {
-        using var db = new PersonQueryData();
+        await using var db = await PersonQueryData.CreateAsync();
         var (collection, local) = db.GetData();
 
         var r0 = local.Where(x => x.Age > 22 && x.Age < 25).ToArray();
+        var r1 = await collection.Find(Query.And(Query.GT("Age", 22), Query.LT("Age", 25))).ToListAsync();
 
-        var r1 = collection.Find(Query.And(Query.GT("Age", 22), Query.LT("Age", 25))).ToArray();
-
-        AssertEx.ArrayEqual(r0, r1, true);
+        AssertEx.ArrayEqual(r0, r1.ToArray(), true);
     }
 }

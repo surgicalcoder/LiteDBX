@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Shell.Commands;
 
@@ -10,23 +11,19 @@ namespace LiteDbX.Shell.Commands;
 )]
 internal class ShowCollections : IShellCommand
 {
-    public bool IsCommand(StringScanner s)
-    {
-        return s.Match(@"show\scollections$");
-    }
+    public bool IsCommand(StringScanner s) => s.Match(@"show\scollections$");
 
-    public void Execute(StringScanner s, Env env)
+    public async ValueTask Execute(StringScanner s, Env env)
     {
         if (env.Database == null)
-        {
             throw new Exception("Database not connected");
-        }
 
-        var cols = env.Database.GetCollectionNames().OrderBy(x => x).ToArray();
+        var cols = await env.Database.GetCollectionNames().ToListAsync();
+        var sorted = cols.OrderBy(x => x).ToArray();
 
-        if (cols.Length > 0)
+        if (sorted.Length > 0)
         {
-            env.Display.WriteLine(ConsoleColor.Cyan, string.Join(Environment.NewLine, cols));
+            env.Display.WriteLine(ConsoleColor.Cyan, string.Join(Environment.NewLine, sorted));
         }
     }
 }

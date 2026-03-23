@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 
@@ -7,27 +8,28 @@ namespace LiteDbX.Tests.Database;
 public class FindAll_Tests
 {
     [Fact]
-    public void FindAll()
+    public async Task FindAll()
     {
-        using (var f = new TempFile())
+        using var f = new TempFile();
+
+        await using (var db = new LiteDatabase(f.Filename))
         {
-            using (var db = new LiteDatabase(f.Filename))
-            {
-                var col = db.GetCollection<Person>("Person");
+            var col = db.GetCollection<Person>("Person");
 
-                col.Insert(new Person { Fullname = "John" });
-                col.Insert(new Person { Fullname = "Doe" });
-                col.Insert(new Person { Fullname = "Joana" });
-                col.Insert(new Person { Fullname = "Marcus" });
-            }
-            // close datafile
+            await col.Insert(new Person { Fullname = "John" });
+            await col.Insert(new Person { Fullname = "Doe" });
+            await col.Insert(new Person { Fullname = "Joana" });
+            await col.Insert(new Person { Fullname = "Marcus" });
+        }
+        // close datafile
 
-            using (var db = new LiteDatabase(f.Filename))
-            {
-                var p = db.GetCollection<Person>("Person").Find(Query.All("Fullname"));
+        await using (var db = new LiteDatabase(f.Filename))
+        {
+            var p = await db.GetCollection<Person>("Person")
+                             .Find(Query.All("Fullname"))
+                             .ToListAsync();
 
-                p.Count().Should().Be(4);
-            }
+            p.Count.Should().Be(4);
         }
     }
 

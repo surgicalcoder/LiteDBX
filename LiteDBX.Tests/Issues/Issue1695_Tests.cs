@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using FluentAssertions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -7,21 +8,21 @@ namespace LiteDbX.Tests.Issues;
 public class Issue1695_Tests
 {
     [Fact]
-    public void ICollection_Parameter_Test()
+    public async Task ICollection_Parameter_Test()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = new LiteDatabase(":memory:");
         var col = db.GetCollection<StateModel>("col");
 
         ICollection<ObjectId> ids = new List<ObjectId>();
 
         for (var i = 1; i <= 10; i++)
         {
-            ids.Add(col.Insert(new StateModel()));
+            ids.Add((ObjectId)(await col.Insert(new StateModel())));
         }
 
-        var items = col.Query()
-                       .Where(x => ids.Contains(x.Id))
-                       .ToList();
+        var items = await col.Query()
+                             .Where(x => ids.Contains(x.Id))
+                             .ToList();
 
         items.Should().HaveCount(10);
     }

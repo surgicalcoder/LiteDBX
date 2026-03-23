@@ -1,4 +1,6 @@
 ﻿using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -6,30 +8,29 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2506_Tests
 {
     [Fact]
-    public void Test()
+    public async Task Test()
     {
-        // Open database connection
-        using LiteDatabase dataBase = new("demo.db");
-
-        // Get the file metadata/chunks storage
+        await using LiteDatabase dataBase = new("demo.db");
         var fileStorage = dataBase.GetStorage<string>("myFiles", "myChunks");
 
         // Upload empty test file to file storage
         using MemoryStream emptyStream = new();
-        fileStorage.Upload("photos/2014/picture-01.jpg", "picture-01.jpg", emptyStream);
+        await fileStorage.Upload("photos/2014/picture-01.jpg", "picture-01.jpg", emptyStream);
 
-        // Find file reference by its ID (returns null if not found)
-        var file = fileStorage.FindById("photos/2014/picture-01.jpg");
+        // Find file reference by its ID
+        var file = await fileStorage.FindById("photos/2014/picture-01.jpg");
         Assert.NotNull(file);
 
-        // Load and save file bytes to hard drive
-        file.SaveAs(Path.Combine(Path.GetTempPath(), "new-picture.jpg"));
+        // Download file to disk
+        await fileStorage.Download("photos/2014/picture-01.jpg",
+            Path.Combine(Path.GetTempPath(), "new-picture.jpg"), true);
 
         // Find all files matching pattern
-        var files = fileStorage.Find("_id LIKE 'photos/2014/%'");
+        var files = await fileStorage.Find("_id LIKE 'photos/2014/%'").ToListAsync();
         Assert.Single(files);
+
         // Find all files matching pattern using parameters
-        var files2 = fileStorage.Find("_id LIKE @0", "photos/2014/%");
+        var files2 = await fileStorage.Find("_id LIKE @0", "photos/2014/%").ToListAsync();
         Assert.Single(files2);
     }
 }

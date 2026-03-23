@@ -43,7 +43,7 @@ public partial class LiteEngine
                 indexer.DeleteAll(pkNode.Position);
 
                 // remove object data
-                data.Delete(collectionPage, pkNode.DataBlock);
+                data.Delete(pkNode.DataBlock);
 
                 count++;
             }

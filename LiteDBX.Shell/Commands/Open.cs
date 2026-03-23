@@ -1,4 +1,6 @@
-﻿namespace LiteDbX.Shell.Commands;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell.Commands;
 
 [Help(
     Name = "open",
@@ -17,13 +19,13 @@ internal class Open : IShellCommand
         return s.Scan(@"open\s+").Length > 0;
     }
 
-    public void Execute(StringScanner s, Env env)
+    public async ValueTask Execute(StringScanner s, Env env)
     {
         var connectionString = new ConnectionString(s.Scan(@".+").TrimToNull());
 
         if (env.Database != null)
         {
-            env.Database.Dispose();
+            await env.Database.DisposeAsync();
             env.Database = null;
         }
 

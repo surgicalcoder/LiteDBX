@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Shell.Commands;
 
@@ -19,12 +20,10 @@ internal class Run : IShellCommand
         return s.Scan(@"run\s+").Length > 0;
     }
 
-    public void Execute(StringScanner s, Env env)
+    public ValueTask Execute(StringScanner s, Env env)
     {
         if (env.Database == null)
-        {
             throw new Exception("Database not connected");
-        }
 
         var filename = s.Scan(@".+").Trim();
 
@@ -32,5 +31,7 @@ internal class Run : IShellCommand
         {
             env.Input.Queue.Enqueue(line);
         }
+
+        return ValueTask.CompletedTask;
     }
 }

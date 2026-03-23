@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -6,23 +7,23 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2487_tests
 {
     [Fact]
-    public void Test_Contains_EmptyStrings()
+    public async Task Test_Contains_EmptyStrings()
     {
-        using var engine = new ConnectionString(":memory:").CreateEngine();
+        await using var engine = new ConnectionString(":memory:").CreateEngine();
 
-        using var db = new LiteDatabase(engine);
+        await using var db = new LiteDatabase(engine);
         var collection = db.GetCollection<DataClass>("data");
 
-        collection.Insert(new DataClass { Foo = "bar", Bar = "abc" });
-        collection.Insert(new DataClass { Foo = " ", Bar = "def" });
-        collection.Insert(new DataClass { Foo = "fo bar", Bar = "def" });
-        collection.Insert(new DataClass { Foo = "", Bar = "def" });
-        collection.Insert(new DataClass { Foo = null, Bar = "def" });
+        await collection.Insert(new DataClass { Foo = "bar", Bar = "abc" });
+        await collection.Insert(new DataClass { Foo = " ", Bar = "def" });
+        await collection.Insert(new DataClass { Foo = "fo bar", Bar = "def" });
+        await collection.Insert(new DataClass { Foo = "", Bar = "def" });
+        await collection.Insert(new DataClass { Foo = null, Bar = "def" });
 
         var containsAction = () => collection.FindOne(x => x.Foo.Contains(" "));
         containsAction.Should().NotThrow();
 
-        var def = containsAction();
+        var def = await containsAction();
         def.Should().NotBeNull();
         def.Bar.Should().Be("def");
 

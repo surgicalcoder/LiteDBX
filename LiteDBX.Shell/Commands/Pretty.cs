@@ -1,4 +1,6 @@
-﻿namespace LiteDbX.Shell.Commands;
+﻿using System.Threading.Tasks;
+
+namespace LiteDbX.Shell.Commands;
 
 [Help(
     Name = "pretty",
@@ -11,13 +13,11 @@
 )]
 internal class Pretty : IShellCommand
 {
-    public bool IsCommand(StringScanner s)
-    {
-        return s.Scan(@"pretty\s*").Length > 0;
-    }
+    public bool IsCommand(StringScanner s) => s.Scan(@"pretty\s*").Length > 0;
 
-    public void Execute(StringScanner s, Env env)
+    public ValueTask Execute(StringScanner s, Env env)
     {
         env.Display.Pretty = !(s.Scan(@"off\s*").Length > 0);
+        return ValueTask.CompletedTask;
     }
 }

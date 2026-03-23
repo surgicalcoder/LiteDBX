@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 
@@ -9,27 +10,23 @@ namespace LiteDbX.Tests.Database;
 public class PredicateBuilder_Tests
 {
     [Fact(Skip = "Need review")]
-    public void Usage_PredicateBuilder()
+    public async Task Usage_PredicateBuilder()
     {
         var p = PredicateBuilder.True<User>();
 
         p = p.And(x => x.Active);
         p = p.And(x => x.Age > 10);
 
-        using (var db = new LiteDatabase(new MemoryStream()))
-        {
-            var col = db.GetCollection<User>("user");
+        await using var db = new LiteDatabase(new MemoryStream());
+        var col = db.GetCollection<User>("user");
 
-            col.Insert(new User { Active = true, Age = 11, Name = "user" });
+        await col.Insert(new User { Active = true, Age = 11, Name = "user" });
 
-            // using direct Expression
-            var r1 = col.FindOne(x => x.Active && x.Age > 10);
-            r1.Name.Should().Be("user");
+        var r1 = await col.FindOne(x => x.Active && x.Age > 10);
+        r1.Name.Should().Be("user");
 
-            // using same expression but now with PredicateBuilder
-            var r2 = col.FindOne(p);
-            r2.Name.Should().Be("user");
-        }
+        var r2 = await col.FindOne(p);
+        r2.Name.Should().Be("user");
     }
 
     #region Model
