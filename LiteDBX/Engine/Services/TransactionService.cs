@@ -385,6 +385,14 @@ internal class TransactionService : IDisposable
         State = TransactionState.Committed;
     }
 
+    private static IEnumerable<PageBuffer> GetStillWritableBuffers(Snapshot snapshot, bool dirty)
+    {
+        return snapshot
+            .GetWritablePages(dirty, true)
+            .Select(x => x.Buffer)
+            .Where(x => x.ShareCounter == BUFFER_WRITABLE);
+    }
+
     /// <summary>
     /// Asynchronously rollback the transaction: discard dirty pages, return new pages, dispose snapshots.
     ///
@@ -403,8 +411,8 @@ internal class TransactionService : IDisposable
         {
             if (snapshot.Mode == LockMode.Write)
             {
-                _disk.DiscardDirtyPages(snapshot.GetWritablePages(true, true).Select(x => x.Buffer));
-                _disk.DiscardCleanPages(snapshot.GetWritablePages(false, true).Select(x => x.Buffer));
+                _disk.DiscardDirtyPages(GetStillWritableBuffers(snapshot, true));
+                _disk.DiscardCleanPages(GetStillWritableBuffers(snapshot, false));
             }
 
             snapshot.Dispose();
@@ -430,8 +438,8 @@ internal class TransactionService : IDisposable
         {
             if (snapshot.Mode == LockMode.Write)
             {
-                _disk.DiscardDirtyPages(snapshot.GetWritablePages(true, true).Select(x => x.Buffer));
-                _disk.DiscardCleanPages(snapshot.GetWritablePages(false, true).Select(x => x.Buffer));
+                _disk.DiscardDirtyPages(GetStillWritableBuffers(snapshot, true));
+                _disk.DiscardCleanPages(GetStillWritableBuffers(snapshot, false));
             }
 
             snapshot.Dispose();
@@ -577,8 +585,8 @@ internal class TransactionService : IDisposable
             {
                 if (snapshot.Mode == LockMode.Write)
                 {
-                    _disk.DiscardDirtyPages(snapshot.GetWritablePages(true, true).Select(x => x.Buffer));
-                    _disk.DiscardCleanPages(snapshot.GetWritablePages(false, true).Select(x => x.Buffer));
+                    _disk.DiscardDirtyPages(GetStillWritableBuffers(snapshot, true));
+                    _disk.DiscardCleanPages(GetStillWritableBuffers(snapshot, false));
                 }
 
                 // Always dispose snapshots so write snapshots release collection locks.

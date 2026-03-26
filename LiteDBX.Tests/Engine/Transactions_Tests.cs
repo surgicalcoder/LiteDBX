@@ -13,6 +13,28 @@ public class Transactions_Tests
 {
     private static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(5);
 
+    private static async Task<(LiteTransaction transaction, TransactionService service)> CreateTransactionWithReadableDirtyCollectionPage(
+        LiteDatabase db,
+        string collectionName,
+        string indexName)
+    {
+        var collection = db.GetCollection<Person>(collectionName);
+        await collection.Insert(new Person { Id = 1, Name = "seed" });
+
+        var transaction = (LiteTransaction)await db.BeginTransaction();
+        var service = transaction.Service;
+        var snapshot = await service.CreateSnapshotAsync(LockMode.Write, collectionName, addIfNotExists: false);
+
+        snapshot.CollectionPage.InsertCollectionIndex(indexName, "$.Name", unique: false);
+        snapshot.CollectionPage.IsDirty.Should().BeTrue();
+
+        // Simulate a safepoint-flushed page buffer: the page is still tracked by the snapshot,
+        // but the underlying buffer is no longer writable.
+        snapshot.CollectionPage.Buffer.ShareCounter = 0;
+
+        return (transaction, service);
+    }
+
     private static Task RunIsolated(Func<Task> action)
     {
         using (ExecutionContext.SuppressFlow())
@@ -241,5 +263,56 @@ public class Transactions_Tests
         }
 
         (await col.Count()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Transaction_RollbackAsync_Ignores_Readable_Safepoint_Buffers()
+    {
+        await using var db = new LiteDatabase(new MemoryStream());
+        var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_async", "idx_async");
+
+        try
+        {
+            await FluentActions.Invoking(() => service.RollbackAsync().AsTask()).Should().NotThrowAsync();
+            service.State.Should().Be(TransactionState.Aborted);
+        }
+        finally
+        {
+            await transaction.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Transaction_Rollback_Ignores_Readable_Safepoint_Buffers()
+    {
+        await using var db = new LiteDatabase(new MemoryStream());
+        var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_sync", "idx_sync");
+
+        try
+        {
+            service.Invoking(x => x.Rollback()).Should().NotThrow();
+            service.State.Should().Be(TransactionState.Aborted);
+        }
+        finally
+        {
+            await transaction.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Transaction_Dispose_Ignores_Readable_Safepoint_Buffers()
+    {
+        await using var db = new LiteDatabase(new MemoryStream());
+        var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_dispose", "idx_dispose");
+
+        try
+        {
+            service.Invoking(x => x.Dispose()).Should().NotThrow();
+            service.State.Should().Be(TransactionState.Disposed);
+        }
+        finally
+        {
+            await transaction.DisposeAsync();
+        }
     }
 }
