@@ -63,9 +63,15 @@ public partial class BsonMapper
     /// <summary>
     /// Map serializer/deserialize for custom types
     /// </summary>
-    private readonly ConcurrentDictionary<Type, Func<object, BsonValue>> _customSerializer = new();
+    private readonly ConcurrentDictionary<Type, Func<object, BsonMapper, BsonValue>> _customSerializer = new();
 
-    private readonly ConcurrentDictionary<Type, Func<BsonValue, object>> _customDeserializer = new();
+    private readonly ConcurrentDictionary<Type, Func<BsonValue, BsonMapper, object>> _customDeserializer = new();
+
+    private readonly ConcurrentDictionary<Type, OpenGenericTypeRegistration> _openGenericTypes = new();
+
+    private readonly ConcurrentDictionary<Type, Func<object, BsonMapper, BsonValue>> _resolvedOpenGenericSerializer = new();
+
+    private readonly ConcurrentDictionary<Type, Func<BsonValue, BsonMapper, object>> _resolvedOpenGenericDeserializer = new();
 
     /// <summary>
     /// Type instantiator function to support IoC
@@ -143,18 +149,182 @@ public partial class BsonMapper
     /// Register a custom type serializer/deserialize function
     /// </summary>
     public void RegisterType<T>(Func<T, BsonValue> serialize, Func<BsonValue, T> deserialize)
-    {
-        _customSerializer[typeof(T)] = o => serialize((T)o);
-        _customDeserializer[typeof(T)] = b => deserialize(b);
-    }
+        => RegisterType(typeof(T), o => serialize((T)o), b => deserialize(b));
+
+    /// <summary>
+    /// Register a custom type serializer/deserialize function with access to the current mapper instance.
+    /// </summary>
+    public void RegisterType<T>(Func<T, BsonMapper, BsonValue> serialize, Func<BsonValue, BsonMapper, T> deserialize)
+        => RegisterType(typeof(T), (o, m) => serialize((T)o, m), (b, m) => deserialize(b, m));
 
     /// <summary>
     /// Register a custom type serializer/deserialize function
     /// </summary>
     public void RegisterType(Type type, Func<object, BsonValue> serialize, Func<BsonValue, object> deserialize)
+        => RegisterType(type, (o, _) => serialize(o), (b, _) => deserialize(b));
+
+    /// <summary>
+    /// Register a custom type serializer/deserialize function with access to the current mapper instance.
+    /// </summary>
+    public void RegisterType(Type type, Func<object, BsonMapper, BsonValue> serialize, Func<BsonValue, BsonMapper, object> deserialize)
     {
-        _customSerializer[type] = o => serialize(o);
-        _customDeserializer[type] = b => deserialize(b);
+        if (type == null) throw new ArgumentNullException(nameof(type));
+        if (serialize == null) throw new ArgumentNullException(nameof(serialize));
+        if (deserialize == null) throw new ArgumentNullException(nameof(deserialize));
+
+        _customSerializer[type] = serialize;
+        _customDeserializer[type] = deserialize;
+    }
+
+    /// <summary>
+    /// Register a custom serializer/deserialize factory for an open generic type definition.
+    /// </summary>
+    public void RegisterOpenGenericType(
+        Type openGenericType,
+        Func<Type, Func<object, BsonMapper, BsonValue>> serializeFactory,
+        Func<Type, Func<BsonValue, BsonMapper, object>> deserializeFactory)
+    {
+        if (openGenericType == null) throw new ArgumentNullException(nameof(openGenericType));
+        if (serializeFactory == null) throw new ArgumentNullException(nameof(serializeFactory));
+        if (deserializeFactory == null) throw new ArgumentNullException(nameof(deserializeFactory));
+        if (!openGenericType.GetTypeInfo().IsGenericTypeDefinition)
+        {
+            throw new ArgumentException("Type must be an open generic type definition.", nameof(openGenericType));
+        }
+
+        _openGenericTypes[openGenericType] = new OpenGenericTypeRegistration(serializeFactory, deserializeFactory);
+
+        foreach (var type in _resolvedOpenGenericSerializer.Keys)
+        {
+            if (type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == openGenericType)
+            {
+                _resolvedOpenGenericSerializer.TryRemove(type, out _);
+            }
+        }
+
+        foreach (var type in _resolvedOpenGenericDeserializer.Keys)
+        {
+            if (type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == openGenericType)
+            {
+                _resolvedOpenGenericDeserializer.TryRemove(type, out _);
+            }
+        }
+    }
+
+    private bool TryGetCustomSerializer(Type declaredType, Type runtimeType, out Func<object, BsonMapper, BsonValue> custom)
+    {
+        if (declaredType != null && _customSerializer.TryGetValue(declaredType, out custom))
+        {
+            return true;
+        }
+
+        if (runtimeType != null && _customSerializer.TryGetValue(runtimeType, out custom))
+        {
+            return true;
+        }
+
+        if (TryResolveOpenGenericSerializer(declaredType, out custom))
+        {
+            return true;
+        }
+
+        return TryResolveOpenGenericSerializer(runtimeType, out custom);
+    }
+
+    private bool TryGetCustomDeserializer(Type type, out Func<BsonValue, BsonMapper, object> custom)
+    {
+        if (_customDeserializer.TryGetValue(type, out custom))
+        {
+            return true;
+        }
+
+        return TryResolveOpenGenericDeserializer(type, out custom);
+    }
+
+    private bool TryResolveOpenGenericSerializer(Type type, out Func<object, BsonMapper, BsonValue> custom)
+    {
+        custom = null;
+
+        if (type == null)
+        {
+            return false;
+        }
+
+        var typeInfo = type.GetTypeInfo();
+
+        if (!typeInfo.IsGenericType || typeInfo.IsGenericTypeDefinition)
+        {
+            return false;
+        }
+
+        if (_resolvedOpenGenericSerializer.TryGetValue(type, out custom))
+        {
+            return true;
+        }
+
+        var openGenericType = type.GetGenericTypeDefinition();
+
+        if (!_openGenericTypes.TryGetValue(openGenericType, out var registration))
+        {
+            return false;
+        }
+
+        custom = _resolvedOpenGenericSerializer.GetOrAdd(type, t => registration.CreateSerializer(t));
+
+        return true;
+    }
+
+    private bool TryResolveOpenGenericDeserializer(Type type, out Func<BsonValue, BsonMapper, object> custom)
+    {
+        custom = null;
+
+        if (type == null)
+        {
+            return false;
+        }
+
+        var typeInfo = type.GetTypeInfo();
+
+        if (!typeInfo.IsGenericType || typeInfo.IsGenericTypeDefinition)
+        {
+            return false;
+        }
+
+        if (_resolvedOpenGenericDeserializer.TryGetValue(type, out custom))
+        {
+            return true;
+        }
+
+        var openGenericType = type.GetGenericTypeDefinition();
+
+        if (!_openGenericTypes.TryGetValue(openGenericType, out var registration))
+        {
+            return false;
+        }
+
+        custom = _resolvedOpenGenericDeserializer.GetOrAdd(type, t => registration.CreateDeserializer(t));
+
+        return true;
+    }
+
+    private sealed class OpenGenericTypeRegistration
+    {
+        private readonly Func<Type, Func<object, BsonMapper, BsonValue>> _serializeFactory;
+        private readonly Func<Type, Func<BsonValue, BsonMapper, object>> _deserializeFactory;
+
+        public OpenGenericTypeRegistration(
+            Func<Type, Func<object, BsonMapper, BsonValue>> serializeFactory,
+            Func<Type, Func<BsonValue, BsonMapper, object>> deserializeFactory)
+        {
+            _serializeFactory = serializeFactory;
+            _deserializeFactory = deserializeFactory;
+        }
+
+        public Func<object, BsonMapper, BsonValue> CreateSerializer(Type closedType)
+            => _serializeFactory(closedType) ?? throw new LiteException(LiteException.MAPPING_ERROR, $"Open generic serializer factory returned null for {closedType.FullName}.");
+
+        public Func<BsonValue, BsonMapper, object> CreateDeserializer(Type closedType)
+            => _deserializeFactory(closedType) ?? throw new LiteException(LiteException.MAPPING_ERROR, $"Open generic deserializer factory returned null for {closedType.FullName}.");
     }
 
     #endregion

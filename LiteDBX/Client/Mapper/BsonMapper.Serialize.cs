@@ -70,9 +70,9 @@ public partial class BsonMapper
 
         // check if is a custom type
 
-        if (_customSerializer.TryGetValue(type, out var custom) || _customSerializer.TryGetValue(obj.GetType(), out custom))
+        if (TryGetCustomSerializer(type, obj.GetType(), out var custom))
         {
-            return custom(obj);
+            return custom(obj, this);
         }
         // test string - mapper has some special options
 

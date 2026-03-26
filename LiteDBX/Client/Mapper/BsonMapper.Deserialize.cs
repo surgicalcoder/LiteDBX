@@ -78,9 +78,9 @@ public partial class BsonMapper
         }
 
         // test if has a custom type implementation
-        if (_customDeserializer.TryGetValue(type, out var custom))
+        if (TryGetCustomDeserializer(type, out var custom))
         {
-            return custom(value);
+            return custom(value, this);
         }
 
         var typeInfo = type.GetTypeInfo();
