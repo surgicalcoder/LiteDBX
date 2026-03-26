@@ -126,22 +126,12 @@ public class ConnectionString
 
         engineSettingsAction?.Invoke(settings);
 
-        // create engine implementation as Connection Type
-        if (Connection == ConnectionType.Direct)
+        return Connection switch
         {
-            return new LiteEngine(settings);
-        }
-
-        if (Connection == ConnectionType.Shared)
-        {
-            return new SharedEngine(settings);
-        }
-
-        if (Connection == ConnectionType.LockFile)
-        {
-            return new LockFileEngine(settings);
-        }
-
-        throw new NotImplementedException();
+            ConnectionType.Direct => new LiteEngine(settings),
+            ConnectionType.Shared => new SharedEngine(settings),
+            ConnectionType.LockFile => new LockFileEngine(settings),
+            _ => throw new NotImplementedException()
+        };
     }
 }
