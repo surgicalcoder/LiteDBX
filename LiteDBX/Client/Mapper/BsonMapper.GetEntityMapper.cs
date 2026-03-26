@@ -14,6 +14,20 @@ public partial class BsonMapper
     /// </summary>
     private readonly ConcurrentDictionary<Type, EntityMapper> _entities = new();
 
+#if NET8_0_OR_GREATER
+    private static bool HasDataAnnotationsKeyAttribute(MemberInfo memberInfo)
+        => CustomAttributeExtensions.IsDefined(memberInfo, typeof(global::System.ComponentModel.DataAnnotations.KeyAttribute), true);
+
+    private static bool HasDataAnnotationsNotMappedAttribute(MemberInfo memberInfo)
+        => CustomAttributeExtensions.IsDefined(memberInfo, typeof(global::System.ComponentModel.DataAnnotations.Schema.NotMappedAttribute), true);
+#else
+    private static bool HasDataAnnotationsKeyAttribute(MemberInfo _)
+        => false;
+
+    private static bool HasDataAnnotationsNotMappedAttribute(MemberInfo _)
+        => false;
+#endif
+
     /// <summary>
     /// Get property mapper between typed .NET class and BsonDocument - Cache results
     /// </summary>
@@ -66,13 +80,13 @@ public partial class BsonMapper
         var fieldAttr = typeof(BsonFieldAttribute);
         var dbrefAttr = typeof(BsonRefAttribute);
 
-        var members = GetTypeMembers(mapper.ForType);
+        var members = GetTypeMembers(mapper.ForType).ToArray();
         var id = GetIdMember(members);
 
         foreach (var memberInfo in members)
         {
-            // checks [BsonIgnore]
-            if (CustomAttributeExtensions.IsDefined(memberInfo, ignoreAttr, true))
+            // checks [BsonIgnore] / [NotMapped]
+            if (CustomAttributeExtensions.IsDefined(memberInfo, ignoreAttr, true) || HasDataAnnotationsNotMappedAttribute(memberInfo))
             {
                 continue;
             }
@@ -103,6 +117,7 @@ public partial class BsonMapper
             // check if property has [BsonId] to get with was setted AutoId = true
             var autoId = (BsonIdAttribute)CustomAttributeExtensions.GetCustomAttributes(memberInfo, idAttr, true)
                                                                    .FirstOrDefault();
+            var hasDataAnnotationsKeyAttribute = HasDataAnnotationsKeyAttribute(memberInfo);
 
             // get data type
             var dataType = memberInfo is PropertyInfo
@@ -115,7 +130,7 @@ public partial class BsonMapper
             // create a property mapper
             var member = new MemberMapper
             {
-                AutoId = autoId == null ? true : autoId.AutoId,
+                AutoId = autoId?.AutoId ?? !hasDataAnnotationsKeyAttribute,
                 FieldName = name,
                 MemberName = memberInfo.Name,
                 DataType = dataType,
@@ -156,8 +171,9 @@ public partial class BsonMapper
     {
         return Reflection.SelectMember(members,
             x => CustomAttributeExtensions.IsDefined(x, typeof(BsonIdAttribute), true),
+            x => HasDataAnnotationsKeyAttribute(x),
             x => x.Name.Equals("Id", StringComparison.OrdinalIgnoreCase),
-            x => x.Name.Equals(x.DeclaringType.Name + "Id", StringComparison.OrdinalIgnoreCase));
+            x => x.DeclaringType != null && x.Name.Equals(x.DeclaringType.Name + "Id", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
