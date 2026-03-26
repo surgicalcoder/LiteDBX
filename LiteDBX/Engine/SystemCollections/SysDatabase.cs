@@ -34,6 +34,8 @@ public partial class LiteEngine
             ["cache"] = new BsonDocument
             {
                 ["extendSegments"] = _disk.Cache.ExtendSegments,
+                ["activeSegments"] = _disk.Cache.ActiveSegments,
+                ["retiredSegments"] = _disk.Cache.RetiredSegments,
                 ["extendPages"] = _disk.Cache.ExtendPages,
                 ["freePages"] = _disk.Cache.FreePages,
                 ["readablePages"] = _disk.Cache.GetPages().Count,

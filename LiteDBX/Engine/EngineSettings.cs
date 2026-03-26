@@ -68,6 +68,12 @@ public class EngineSettings
     public Func<string, BsonValue, BsonValue> ReadTransform { get; set; }
 
     /// <summary>
+    /// Optional memory-cache trimming settings.
+    /// Defaults preserve the current cache behavior unless trimming is explicitly enabled.
+    /// </summary>
+    public MemoryCacheConfig MemoryCacheConfig { get; set; } = new MemoryCacheConfig();
+
+    /// <summary>
     /// Create new IStreamFactory for datafile
     /// </summary>
     internal IStreamFactory CreateDataFactory(bool useAesStream = true)

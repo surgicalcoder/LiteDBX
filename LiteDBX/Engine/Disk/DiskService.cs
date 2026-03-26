@@ -50,7 +50,7 @@ internal class DiskService : IDisposable, IAsyncDisposable
         EngineState state,
         int[] memorySegmentSizes)
     {
-        Cache = new MemoryCache(memorySegmentSizes);
+        Cache = new MemoryCache(memorySegmentSizes, settings.MemoryCacheConfig);
         _state = state;
 
         _dataFactory = settings.CreateDataFactory();

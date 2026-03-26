@@ -14,6 +14,11 @@ internal class PageBuffer : BufferSlice
     public readonly int UniqueID;
 
     /// <summary>
+    /// Get the memory segment this page belongs to. 0 means this page was allocated as a standalone buffer.
+    /// </summary>
+    public readonly int SegmentId;
+
+    /// <summary>
     /// Get/Set page bytes origin (data/log)
     /// </summary>
     public FileOrigin Origin;
@@ -33,14 +38,21 @@ internal class PageBuffer : BufferSlice
     /// </summary>
     public long Timestamp;
 
-    public PageBuffer(byte[] buffer, int offset, int uniqueID)
+    /// <summary>
+    /// Get/Set timestamp from when this page last returned to the free queue.
+    /// </summary>
+    public long? TimestampFree;
+
+    public PageBuffer(byte[] buffer, int offset, int uniqueID, int segmentId = 0)
         : base(buffer, offset, PAGE_SIZE)
     {
         UniqueID = uniqueID;
+        SegmentId = segmentId;
         Position = long.MaxValue;
         Origin = FileOrigin.None;
         ShareCounter = 0;
         Timestamp = 0;
+        TimestampFree = null;
     }
 
     /// <summary>

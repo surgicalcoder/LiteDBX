@@ -21,6 +21,7 @@ internal class MemoryCache : IDisposable
     /// - All pages here MUST have Position = MaxValue
     /// </summary>
     private readonly ConcurrentQueue<PageBuffer> _free = new();
+    private readonly object _freeSync = new();
 
     /// <summary>
     /// Contains only clean pages (from both data/log file) - support page concurrency use
@@ -36,15 +37,17 @@ internal class MemoryCache : IDisposable
     /// Get memory segment sizes
     /// </summary>
     private readonly int[] _segmentSizes;
+    private readonly PageBufferManager _bufferManager;
 
     /// <summary>
     /// Get how many extends were made in this store
     /// </summary>
     private int _extends;
 
-    public MemoryCache(int[] memorySegmentSizes)
+    public MemoryCache(int[] memorySegmentSizes, MemoryCacheConfig config = null)
     {
         _segmentSizes = memorySegmentSizes;
+        _bufferManager = new PageBufferManager(config ?? new MemoryCacheConfig());
 
         Extend();
     }
@@ -141,10 +144,7 @@ internal class MemoryCache : IDisposable
         if (!ReferenceEquals(page, newPage))
         {
             // Duplicate load: recycle newPage back to the free list.
-            newPage.Position = long.MaxValue;
-            newPage.Origin = FileOrigin.None;
-            // ShareCounter is still 0 from GetFreePage(); safe to re-enqueue directly.
-            _free.Enqueue(newPage);
+            ReturnReadableMissPage(newPage);
         }
 
         Interlocked.Exchange(ref page.Timestamp, DateTime.UtcNow.Ticks);
@@ -330,7 +330,7 @@ internal class MemoryCache : IDisposable
         //  or will be overwritten by ReadPage
 
         // added into free list
-        _free.Enqueue(page);
+        EnqueueFreePage(page);
     }
 
     #endregion
@@ -342,34 +342,45 @@ internal class MemoryCache : IDisposable
     /// </summary>
     private PageBuffer GetFreePage()
     {
-        if (_free.TryDequeue(out var page))
+        lock (_freeSync)
         {
+            TryCleanupFreePagesUnderLock();
+
+            if (!_free.TryDequeue(out var page))
+            {
+                ExtendUnderLock();
+
+                var dequeued = _free.TryDequeue(out page);
+
+                ENSURE(dequeued, "memory cache must contain a free page after Extend()");
+            }
+
             ENSURE(page.Position == long.MaxValue, "pages in memory store must have no position defined");
             ENSURE(page.ShareCounter == 0, "pages in memory store must be non-shared");
             ENSURE(page.Origin == FileOrigin.None, "page in memory must have no page origin");
 
+            _bufferManager.MarkDequeued(page);
+
             return page;
         }
-        // if no more page inside memory store - extend store/reuse non-shared pages
-
-        // ensure only 1 single thread call extend method
-        lock (_free)
-        {
-            if (_free.Count > 0)
-            {
-                return GetFreePage();
-            }
-
-            Extend();
-        }
-
-        return GetFreePage();
     }
 
     /// <summary>
     /// Check if it's possible move readable pages to free list - if not possible, extend memory
     /// </summary>
     private void Extend()
+    {
+        lock (_freeSync)
+        {
+            ExtendUnderLock();
+        }
+    }
+
+    /// <summary>
+    /// Check if it's possible move readable pages to free list - if not possible, extend memory.
+    /// Must be called inside <see cref="_freeSync"/>.
+    /// </summary>
+    private void ExtendUnderLock()
     {
         // count how many pages in cache are available to be re-used (is not in use at this time)
         var emptyShareCounter = _readable.Values.Count(x => x.ShareCounter == 0);
@@ -414,7 +425,7 @@ internal class MemoryCache : IDisposable
                     page.Position = long.MaxValue;
                     page.Origin = FileOrigin.None;
 
-                    _free.Enqueue(page);
+                    EnqueueFreePageUnderLock(page);
                 }
             }
 
@@ -425,12 +436,18 @@ internal class MemoryCache : IDisposable
             // create big linear array in heap memory (LOH => 85Kb)
             var buffer = new byte[PAGE_SIZE * segmentSize];
             var uniqueID = ExtendPages + 1;
+            var segmentId = _bufferManager.NextSegmentId();
+            var pages = new PageBuffer[segmentSize];
 
             // split linear array into many array slices
             for (var i = 0; i < segmentSize; i++)
             {
-                _free.Enqueue(new PageBuffer(buffer, i * PAGE_SIZE, uniqueID++));
+                var page = new PageBuffer(buffer, i * PAGE_SIZE, uniqueID++, segmentId);
+                pages[i] = page;
+                _free.Enqueue(page);
             }
+
+            _bufferManager.RegisterSegment(segmentId, pages);
 
             _extends++;
 
@@ -446,7 +463,16 @@ internal class MemoryCache : IDisposable
     /// <summary>
     /// Return how many pages are available (completely free)
     /// </summary>
-    public int FreePages => _free.Count;
+    public int FreePages
+    {
+        get
+        {
+            lock (_freeSync)
+            {
+                return _free.Count;
+            }
+        }
+    }
 
     /// <summary>
     /// Return how many segments are already loaded in memory
@@ -459,10 +485,29 @@ internal class MemoryCache : IDisposable
     public int ExtendPages => Enumerable.Range(0, _extends).Select(x => _segmentSizes[Math.Min(_segmentSizes.Length - 1, x)]).Sum();
 
     /// <summary>
+    /// Return the number of currently active backing segments.
+    /// </summary>
+    public int ActiveSegments => _bufferManager.ActiveSegments;
+
+    /// <summary>
+    /// Return the number of retired backing segments.
+    /// </summary>
+    public int RetiredSegments => _bufferManager.RetiredSegments;
+
+    /// <summary>
     /// Get how many pages are used as Writable at this moment
     /// </summary>
-    public int WritablePages => ExtendPages - // total memory
-                                _free.Count - _readable.Count; // allocated pages
+    public int WritablePages
+    {
+        get
+        {
+            lock (_freeSync)
+            {
+                return ExtendPages - // total memory
+                       _free.Count - _readable.Count; // allocated pages
+            }
+        }
+    }
 
     /// <summary>
     /// Get all readable pages
@@ -487,7 +532,10 @@ internal class MemoryCache : IDisposable
             page.Position = long.MaxValue;
             page.Origin = FileOrigin.None;
 
-            _free.Enqueue(page);
+            lock (_freeSync)
+            {
+                EnqueueFreePageUnderLock(page);
+            }
 
             counter++;
         }
@@ -495,6 +543,83 @@ internal class MemoryCache : IDisposable
         _readable.Clear();
 
         return counter;
+    }
+
+    private void ReturnReadableMissPage(PageBuffer page)
+    {
+        page.Position = long.MaxValue;
+        page.Origin = FileOrigin.None;
+        EnqueueFreePage(page);
+    }
+
+    private void EnqueueFreePage(PageBuffer page)
+    {
+        lock (_freeSync)
+        {
+            EnqueueFreePageUnderLock(page);
+        }
+    }
+
+    private void EnqueueFreePageUnderLock(PageBuffer page)
+    {
+        _bufferManager.MarkEnqueued(page, DateTime.UtcNow.Ticks);
+        _free.Enqueue(page);
+    }
+
+    private void TryCleanupFreePagesUnderLock()
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+
+        if (!_bufferManager.ShouldCleanup(_free.Count, nowTicks)) return;
+
+        _bufferManager.MarkCleanupRun(nowTicks);
+
+        var candidates = _bufferManager.GetRetireableSegments(nowTicks);
+
+        if (candidates.Length == 0) return;
+
+        var candidateMap = candidates.ToDictionary(x => x.SegmentId);
+        var retainedPages = new List<PageBuffer>(_free.Count);
+        var removedPages = new Dictionary<int, List<PageBuffer>>();
+
+        while (_free.TryDequeue(out var page))
+        {
+            if (candidateMap.ContainsKey(page.SegmentId))
+            {
+                if (!removedPages.TryGetValue(page.SegmentId, out var list))
+                {
+                    list = new List<PageBuffer>();
+                    removedPages[page.SegmentId] = list;
+                }
+
+                list.Add(page);
+            }
+            else
+            {
+                retainedPages.Add(page);
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (removedPages.TryGetValue(candidate.SegmentId, out var pages) &&
+                pages.Count == candidate.TotalPages &&
+                _bufferManager.TryRetireSegment(candidate.SegmentId))
+            {
+                LOG($"retiring idle cache segment {candidate.SegmentId} ({candidate.TotalPages} pages)", "CACHE");
+                continue;
+            }
+
+            if (pages != null)
+            {
+                retainedPages.AddRange(pages);
+            }
+        }
+
+        foreach (var page in retainedPages)
+        {
+            _free.Enqueue(page);
+        }
     }
 
     #endregion
