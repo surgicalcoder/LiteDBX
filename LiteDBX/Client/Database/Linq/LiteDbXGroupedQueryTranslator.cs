@@ -9,28 +9,6 @@ namespace LiteDbX;
 
 internal static class LiteDbXGroupedQueryTranslator
 {
-    private static readonly MethodInfo EnumerableSelectMethod = typeof(Enumerable)
-        .GetMethods(BindingFlags.Public | BindingFlags.Static)
-        .Where(x => x.Name == nameof(Enumerable.Select))
-        .Where(x => x.IsGenericMethodDefinition)
-        .Single(x =>
-        {
-            var parameters = x.GetParameters();
-            if (parameters.Length != 2)
-            {
-                return false;
-            }
-
-            var selectorType = parameters[1].ParameterType;
-            if (!selectorType.IsGenericType)
-            {
-                return false;
-            }
-
-            var genericArguments = selectorType.GetGenericArguments();
-            return selectorType.GetGenericTypeDefinition() == typeof(Func<,>) && genericArguments.Length == 2;
-        });
-
     private static readonly HashSet<string> SupportedAggregateMethods = new(StringComparer.Ordinal)
     {
         nameof(Enumerable.Count),
@@ -234,14 +212,6 @@ internal static class LiteDbXGroupedQueryTranslator
 
     private static GroupedFragment TranslateAggregate(GroupedTranslationContext context, MethodCallExpression expression)
     {
-        var groupingType = context.GroupParameter.Type;
-        var groupingInterface = groupingType.IsGenericType && groupingType.GetGenericTypeDefinition() == typeof(IGrouping<,>)
-            ? groupingType
-            : groupingType.GetInterfaces().First(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IGrouping<,>));
-
-        var elementType = groupingInterface.GetGenericArguments()[1];
-        var sourceParameter = Expression.Parameter(typeof(IEnumerable<>).MakeGenericType(elementType), "source");
-
         if (expression.Arguments.Count == 1)
         {
             return GroupedFragment.Raw($"{GetAggregateFunctionName(expression.Method.Name)}(*)");
@@ -256,32 +226,67 @@ internal static class LiteDbXGroupedQueryTranslator
                 "Use direct grouped aggregate selectors such as g.Sum(x => x.Age), or fall back to collection.Query().");
         }
 
-        var selectCall = Expression.Call(
-            EnumerableSelectMethod.MakeGenericMethod(elementType, selectorLambda.ReturnType),
-            sourceParameter,
-            selectorLambda);
-
-        var mapLambda = Expression.Lambda(selectCall, sourceParameter);
-        var translatedMap = LiteDbXLambdaTranslator.Translate(context.Mapper, mapLambda);
-        var mapSource = RewriteEnumerableMapToSourceToken(translatedMap.Source);
+        var translatedSelector = LiteDbXLambdaTranslator.Translate(context.Mapper, selectorLambda);
+        var selectorSource = RewriteSelectorSourceForGroupMap(translatedSelector.Source);
 
         return GroupedFragment.Composite(
-            $"{GetAggregateFunctionName(expression.Method.Name)}({mapSource})",
-            translatedMap.Parameters ?? new BsonDocument());
+            $"{GetAggregateFunctionName(expression.Method.Name)}(MAP(*=>{selectorSource}))",
+            translatedSelector.Parameters ?? new BsonDocument());
     }
 
-    private static string RewriteEnumerableMapToSourceToken(string source)
+    private static string RewriteSelectorSourceForGroupMap(string source)
     {
         if (string.IsNullOrWhiteSpace(source))
         {
             return source;
         }
 
-        return source
-            .Replace("MAP($ => ", "MAP(*=>")
-            .Replace("MAP($ =>", "MAP(*=>")
-            .Replace("MAP($=>", "MAP(*=>");
+        var tokenizer = new Tokenizer(source);
+        var builder = new StringBuilder(source.Length);
+
+        while (true)
+        {
+            var token = tokenizer.ReadToken(false);
+
+            if (token.Type == TokenType.EOF)
+            {
+                break;
+            }
+
+            if (token.Type == TokenType.Dollar)
+            {
+                var next = tokenizer.LookAhead(false);
+
+                if (next.Type == TokenType.Period)
+                {
+                    tokenizer.ReadToken(false);
+
+                    var afterPeriod = tokenizer.LookAhead(false);
+
+                    if (afterPeriod.Type == TokenType.OpenBracket)
+                    {
+                        builder.Append("@.");
+                    }
+
+                    continue;
+                }
+
+                if (next.Type == TokenType.OpenBracket)
+                {
+                    builder.Append("@.");
+                    continue;
+                }
+
+                builder.Append("@");
+                continue;
+            }
+
+            builder.Append(token.Value);
+        }
+
+        return builder.ToString();
     }
+
 
     private static string GetAggregateFunctionName(string methodName)
     {
