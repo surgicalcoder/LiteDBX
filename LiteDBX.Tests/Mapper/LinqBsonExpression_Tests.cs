@@ -137,6 +137,9 @@ public class LinqBsonExpression_Tests
     [Fact]
     public void Linq_Predicate()
     {
+        var always = true;
+        var never = false;
+
         // binary expressions
         TestPredicate<User>(x => x.Active == true, "(Active = @p0)", true);
         TestPredicate<User>(x => x.Salary > 50, "(Salary > @p0)", 50);
@@ -148,6 +151,10 @@ public class LinqBsonExpression_Tests
         TestPredicate<User>(x => (x.Salary > 50) | (x.Name == "John"), "((Salary > @p0) OR (Name = @p1))", 50, "John");
 
         // unary expressions
+        TestPredicate<User>(x => true, "(@p0 = true)", true);
+        TestPredicate<User>(x => false, "(@p0 = true)", false);
+        TestPredicate<User>(x => always, "(@p0 = true)", true);
+        TestPredicate<User>(x => never, "(@p0 = true)", false);
         TestPredicate<User>(x => x.Active, "(Active = true)");
         TestPredicate<User>(x => x.Active && x.Active, "(((Active) = true) AND ((Active) = true))");
         TestPredicate<User>(x => x.Active && x.Active && x.Active, "(((($.Active)=true) AND (($.Active)=true)) AND (($.Active)=true))");

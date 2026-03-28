@@ -15,6 +15,7 @@ internal class QueryOptimization
     private readonly QueryPlan _queryPlan;
     private readonly Snapshot _snapshot;
     private readonly List<BsonExpression> _terms = new();
+    private bool _alwaysFalse;
 
     public QueryOptimization(Snapshot snapshot, Query query, IEnumerable<BsonDocument> source, Collation collation)
     {
@@ -50,6 +51,7 @@ internal class QueryOptimization
     {
         // split where expressions into TERMs (splited by AND operator)
         SplitWherePredicateInTerms();
+        _queryPlan.IsEmptyResult = _alwaysFalse;
 
         // do terms optimizations
         OptimizeTerms();
@@ -140,10 +142,25 @@ internal class QueryOptimization
     {
         void add(BsonExpression predicate)
         {
+            if (_alwaysFalse)
+            {
+                return;
+            }
+
             // do not accept source * in WHERE
             if (predicate.UseSource)
             {
                 throw new LiteException(0, $"WHERE filter can not use `*` expression in `{predicate.Source}");
+            }
+
+            if (TryGetConstantBoolean(predicate, out var constant))
+            {
+                if (!constant)
+                {
+                    _alwaysFalse = true;
+                }
+
+                return;
             }
 
             // add expression in where list breaking AND statments
@@ -169,6 +186,38 @@ internal class QueryOptimization
         foreach (var predicate in _query.Where)
         {
             add(predicate);
+        }
+    }
+
+    private bool TryGetConstantBoolean(BsonExpression expression, out bool value)
+    {
+        value = false;
+
+        if (expression == null || !expression.IsScalar)
+        {
+            return false;
+        }
+
+        if (expression.Fields.Count > 0 || expression.UseSource)
+        {
+            return false;
+        }
+
+        try
+        {
+            var result = expression.ExecuteScalar(_collation);
+
+            if (!result.IsBoolean)
+            {
+                return false;
+            }
+
+            value = result.AsBoolean;
+            return true;
+        }
+        catch (LiteException)
+        {
+            return false;
         }
     }
 

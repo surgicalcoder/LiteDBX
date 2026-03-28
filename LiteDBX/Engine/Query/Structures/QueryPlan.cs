@@ -82,6 +82,11 @@ internal class QueryPlan
     public int Limit { get; set; } = int.MaxValue;
 
     /// <summary>
+    /// Query WHERE clause is known to be unsatisfiable, so execution can return no rows immediately.
+    /// </summary>
+    public bool IsEmptyResult { get; set; } = false;
+
+    /// <summary>
     /// Skip documents before returns
     /// </summary>
     public int Offset { get; set; }
@@ -143,6 +148,11 @@ internal class QueryPlan
         if (Limit != int.MaxValue)
         {
             doc["limit"] = Limit;
+        }
+
+        if (IsEmptyResult)
+        {
+            doc["emptyResult"] = true;
         }
 
         if (Offset != 0)

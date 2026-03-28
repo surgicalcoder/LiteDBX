@@ -209,6 +209,35 @@ public class Queryable_Translation_Tests
     }
 
     [Fact]
+    public async Task Queryable_Constant_Boolean_Where_Lowers_And_Executes_Correctly()
+    {
+        await using var db = await PersonQueryData.CreateAsync();
+        var (collection, local) = db.GetData();
+        var always = true;
+        var never = false;
+
+        var allQueryable = collection.AsQueryable().Where(x => true);
+        var capturedAllQueryable = collection.AsQueryable().Where(x => always);
+        var noneQueryable = collection.AsQueryable().Where(x => false);
+        var capturedNoneQueryable = collection.AsQueryable().Where(x => never);
+
+        allQueryable.ToQuery().Where.Should().ContainSingle().Which.Source.Should().Be("(@p0=true)");
+        capturedAllQueryable.ToQuery().Where.Should().ContainSingle().Which.Source.Should().Be("(@p0=true)");
+        noneQueryable.ToQuery().Where.Should().ContainSingle().Which.Source.Should().Be("(@p0=true)");
+        capturedNoneQueryable.ToQuery().Where.Should().ContainSingle().Which.Source.Should().Be("(@p0=true)");
+
+        var all = await allQueryable.ToArrayAsync();
+        var capturedAll = await capturedAllQueryable.ToArrayAsync();
+        var none = await noneQueryable.ToArrayAsync();
+        var capturedNone = await capturedNoneQueryable.ToArrayAsync();
+
+        AssertEx.ArrayEqual(local, all, true);
+        AssertEx.ArrayEqual(local, capturedAll, true);
+        none.Should().BeEmpty();
+        capturedNone.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Queryable_Unsupported_Join_Fails_Clearly()
     {
         await using var db = await PersonQueryData.CreateAsync();

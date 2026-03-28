@@ -231,6 +231,11 @@ internal class QueryExecutor
             yield break;
         }
 
+        if (queryPlan.IsEmptyResult)
+        {
+            yield break;
+        }
+
         var nodes = queryPlan.Index.Run(
             snapshot.CollectionPage,
             new IndexService(snapshot, _pragmas.Collation, _disk.MAX_ITEMS_COUNT));

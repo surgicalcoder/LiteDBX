@@ -161,6 +161,36 @@ public class Queryable_Execution_Tests
     }
 
     [Fact]
+    public async Task Queryable_Constant_Boolean_Predicates_Work_Across_Async_Terminals()
+    {
+        await using var db = await PersonQueryData.CreateAsync();
+        var (collection, local) = db.GetData();
+        var always = true;
+        var never = false;
+
+        var allQueryable = collection.AsQueryable().Where(x => always);
+        var noneQueryable = collection.AsQueryable().Where(x => never);
+
+        var all = await allQueryable.ToArrayAsync();
+        var none = await noneQueryable.ToArrayAsync();
+        var anyAll = await allQueryable.AnyAsync();
+        var anyNone = await noneQueryable.AnyAsync();
+        var countAll = await allQueryable.CountAsync();
+        var countNone = await noneQueryable.CountAsync();
+        var longCountAll = await allQueryable.LongCountAsync();
+        var longCountNone = await noneQueryable.LongCountAsync();
+
+        AssertEx.ArrayEqual(local, all, true);
+        none.Should().BeEmpty();
+        anyAll.Should().BeTrue();
+        anyNone.Should().BeFalse();
+        countAll.Should().Be(local.Length);
+        countNone.Should().Be(0);
+        longCountAll.Should().Be(local.LongLength);
+        longCountNone.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Queryable_GetPlanAsync_Parity_With_Native_Query()
     {
         await using var db = await PersonQueryData.CreateAsync();

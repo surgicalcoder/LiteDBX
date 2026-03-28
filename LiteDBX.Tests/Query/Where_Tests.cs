@@ -1,5 +1,6 @@
 ﻿using System.Linq;
 using System.Threading.Tasks;
+using FluentAssertions;
 using Xunit;
 
 namespace LiteDbX.Tests.QueryTest;
@@ -70,6 +71,19 @@ public class Where_Tests
         var r1 = await collection.Query().Where(x => ids.Contains(x.Id)).ToArray();
 
         AssertEx.ArrayEqual(r0, r1, true);
+    }
+
+    [Fact]
+    public async Task Query_Where_With_Constant_Boolean_Predicates()
+    {
+        await using var db = await PersonQueryData.CreateAsync();
+        var (collection, local) = db.GetData();
+
+        var all = await collection.Query().Where(x => true).ToArray();
+        var none = await collection.Query().Where(x => false).ToArray();
+
+        AssertEx.ArrayEqual(local, all, true);
+        none.Should().BeEmpty();
     }
 
     private class Entity
