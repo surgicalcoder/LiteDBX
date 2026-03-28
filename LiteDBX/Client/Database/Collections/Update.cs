@@ -22,7 +22,7 @@ public partial class LiteCollection<T>
         // get BsonDocument from object
         var doc = _mapper.ToDocument(entity);
 
-        return await _engine.Update(Name, new[] { doc }, cancellationToken).ConfigureAwait(false) > 0;
+        return await _engine.Update(Name, [doc], cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ public partial class LiteCollection<T>
         // set document _id using id parameter
         doc["_id"] = id;
 
-        return await _engine.Update(Name, new[] { doc }, cancellationToken).ConfigureAwait(false) > 0;
+        return await _engine.Update(Name, [doc], cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>

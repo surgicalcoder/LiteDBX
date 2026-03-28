@@ -88,7 +88,7 @@ public partial class LiteCollection<T>
             {
                 // convert LINQ expression that returns an IEnumerable but expression returns a single value
                 // `x => x.Phones` --> `$.Phones[*]`
-                // works only if exression is a simple path
+                // works only if expression is a simple path
                 expression = expression.Source + "[*]";
             }
             else

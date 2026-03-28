@@ -27,7 +27,7 @@ public partial class LiteCollection<T>
         var doc = _mapper.ToDocument(entity);
         var removed = RemoveDocId(doc);
 
-        await _engine.Insert(Name, new[] { doc }, AutoId, transaction, cancellationToken).ConfigureAwait(false);
+        await _engine.Insert(Name, [doc], AutoId, transaction, cancellationToken).ConfigureAwait(false);
 
         var id = doc["_id"];
 
@@ -89,7 +89,7 @@ public partial class LiteCollection<T>
     }
 
     /// <summary>
-    /// Implements bulk insert documents in a collection. Usefull when need lots of documents.
+    /// Implements bulk insert documents in a collection. Useful when need lots of documents.
     /// </summary>
     [Obsolete("Use normal Insert()")]
     public async ValueTask<int> InsertBulk(IEnumerable<T> entities, int batchSize = 5000, CancellationToken cancellationToken = default)

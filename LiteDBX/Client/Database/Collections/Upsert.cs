@@ -17,7 +17,7 @@ public partial class LiteCollection<T>
             throw new ArgumentNullException(nameof(entity));
         }
 
-        return await Upsert(new[] { entity }, cancellationToken).ConfigureAwait(false) == 1;
+        return await Upsert([entity], cancellationToken).ConfigureAwait(false) == 1;
     }
 
     /// <summary>
@@ -54,6 +54,6 @@ public partial class LiteCollection<T>
         // set document _id using id parameter
         doc["_id"] = id;
 
-        return await _engine.Upsert(Name, new[] { doc }, AutoId, cancellationToken).ConfigureAwait(false) > 0;
+        return await _engine.Upsert(Name, [doc], AutoId, cancellationToken).ConfigureAwait(false) > 0;
     }
 }
