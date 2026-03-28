@@ -193,10 +193,15 @@ internal sealed class LiteFileHandle<TFileId> : ILiteFileHandle<TFileId>
         _writeStateDirty = true;
         _position += buffer.Length;
 
-        // MemoryStream.WriteAsync accepts byte[] rather than ReadOnlyMemory<byte> on .NET Standard 2.x,
-        // so we use a temporary array.  On .NET 5+ this could be optimised with GetSpan / Advance.
+        // netstandard2.0 lacks span/ReadOnlyMemory-friendly MemoryStream write APIs, so we keep the
+        // array-copy fallback there. Newer targets can write directly from the caller's buffer.
+#if NETSTANDARD2_0
         var bytes = buffer.ToArray();
         await _writeBuffer.WriteAsync(bytes, 0, bytes.Length, cancellationToken).ConfigureAwait(false);
+#else
+        cancellationToken.ThrowIfCancellationRequested();
+        _writeBuffer.Write(buffer.Span);
+#endif
 
         if (_writeBuffer.Length >= MaxChunkSize)
         {
