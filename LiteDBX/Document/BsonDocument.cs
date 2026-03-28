@@ -12,7 +12,14 @@ public class BsonDocument : BsonValue, IDictionary<string, BsonValue>
     private int _length;
 
     public BsonDocument()
-        : base(BsonType.Document, new Dictionary<string, BsonValue>(StringComparer.OrdinalIgnoreCase)) { }
+        : this(0) { }
+
+    internal BsonDocument(int capacity)
+        : base(
+            BsonType.Document,
+            capacity > 0
+                ? new Dictionary<string, BsonValue>(capacity, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, BsonValue>(StringComparer.OrdinalIgnoreCase)) { }
 
     public BsonDocument(ConcurrentDictionary<string, BsonValue> dict)
         : this()

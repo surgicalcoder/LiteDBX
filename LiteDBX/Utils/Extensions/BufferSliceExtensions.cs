@@ -8,6 +8,11 @@ namespace LiteDbX;
 
 internal static class BufferSliceExtensions
 {
+    private static decimal CreateDecimal(int lo, int mid, int hi, int flags)
+    {
+        return new decimal(lo, mid, hi, (flags & int.MinValue) != 0, unchecked((byte)((uint)flags >> 16)));
+    }
+
     #region Read Extensions
 
     public static bool ReadBool(this BufferSlice buffer, int offset)
@@ -58,7 +63,7 @@ internal static class BufferSliceExtensions
         var c = buffer.ReadInt32(offset + 8);
         var d = buffer.ReadInt32(offset + 12);
 
-        return new decimal(new[] { a, b, c, d });
+        return CreateDecimal(a, b, c, d);
     }
 
     public static ObjectId ReadObjectId(this BufferSlice buffer, int offset)
@@ -68,7 +73,11 @@ internal static class BufferSliceExtensions
 
     public static Guid ReadGuid(this BufferSlice buffer, int offset)
     {
+#if NETSTANDARD2_0
         return new Guid(buffer.ReadBytes(offset, 16));
+#else
+        return new Guid(buffer.AsSpan(offset, 16));
+#endif
     }
 
     public static byte[] ReadBytes(this BufferSlice buffer, int offset, int count)
@@ -249,7 +258,11 @@ internal static class BufferSliceExtensions
 
     public static void Write(this BufferSlice buffer, Guid value, int offset)
     {
+#if NETSTANDARD2_0
         buffer.Write(value.ToByteArray(), offset);
+#else
+        value.TryWriteBytes(buffer.AsWritableSpan(offset, 16));
+#endif
     }
 
     public static void Write(this BufferSlice buffer, ObjectId value, int offset)

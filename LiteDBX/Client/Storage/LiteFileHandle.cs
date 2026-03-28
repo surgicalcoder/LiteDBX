@@ -280,9 +280,7 @@ internal sealed class LiteFileHandle<TFileId> : ILiteFileHandle<TFileId>
     private async ValueTask LoadChunk(int chunkIndex, CancellationToken cancellationToken)
     {
         var chunk = await _chunks
-            .FindOne(
-                BsonExpression.Create("_id = { f: @0, n: @1 }", _fileId, new BsonValue(chunkIndex)),
-                cancellationToken)
+            .FindById(CreateChunkId(chunkIndex), cancellationToken)
             .ConfigureAwait(false);
 
         if (chunk is null)
@@ -362,11 +360,7 @@ internal sealed class LiteFileHandle<TFileId> : ILiteFileHandle<TFileId>
         int read;
         while ((read = await _writeBuffer.ReadAsync(readBuf, 0, MaxChunkSize, cancellationToken).ConfigureAwait(false)) > 0)
         {
-            var chunkId = new BsonDocument
-            {
-                ["f"] = _fileId,
-                ["n"] = new BsonValue(FileInfo.Chunks++) // zero-based, incremented per chunk stored
-            };
+            var chunkId = CreateChunkId(FileInfo.Chunks++); // zero-based, incremented per chunk stored
 
             byte[] chunkData;
             if (read == MaxChunkSize)
@@ -380,11 +374,7 @@ internal sealed class LiteFileHandle<TFileId> : ILiteFileHandle<TFileId>
                 Buffer.BlockCopy(readBuf, 0, chunkData, 0, read);
             }
 
-            var chunkDoc = new BsonDocument
-            {
-                ["_id"] = chunkId,
-                ["data"] = new BsonValue(chunkData)
-            };
+            var chunkDoc = CreateChunkDocument(chunkId, chunkData);
 
             await _chunks.Insert(chunkDoc, cancellationToken).ConfigureAwait(false);
         }
@@ -399,7 +389,25 @@ internal sealed class LiteFileHandle<TFileId> : ILiteFileHandle<TFileId>
 
         // Reset the write buffer for subsequent Write() calls before a final Flush().
         _writeBuffer?.Dispose();
-        _writeBuffer = new MemoryStream();
+        _writeBuffer = new MemoryStream(MaxChunkSize);
+    }
+
+    private BsonDocument CreateChunkId(int chunkIndex)
+    {
+        var chunkId = new BsonDocument(2);
+        chunkId["f"] = _fileId;
+        chunkId["n"] = chunkIndex;
+
+        return chunkId;
+    }
+
+    private static BsonDocument CreateChunkDocument(BsonDocument chunkId, byte[] chunkData)
+    {
+        var chunkDoc = new BsonDocument(2);
+        chunkDoc["_id"] = chunkId;
+        chunkDoc["data"] = chunkData;
+
+        return chunkDoc;
     }
 
     // ── Guard helpers ─────────────────────────────────────────────────────────

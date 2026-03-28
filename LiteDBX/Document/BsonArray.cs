@@ -9,7 +9,10 @@ public class BsonArray : BsonValue, IList<BsonValue>
     private int _length;
 
     public BsonArray()
-        : base(BsonType.Array, new List<BsonValue>()) { }
+        : this(0) { }
+
+    protected BsonArray(int capacity)
+        : base(BsonType.Array, capacity > 0 ? new List<BsonValue>(capacity) : new List<BsonValue>()) { }
 
     public BsonArray(List<BsonValue> array)
         : this()

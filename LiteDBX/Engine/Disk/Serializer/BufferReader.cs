@@ -2,7 +2,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.IO;
 using static LiteDbX.Constants;
 
 namespace LiteDbX.Engine;
@@ -52,6 +51,26 @@ internal class BufferReader : IDisposable
     public void Dispose()
     {
         _source?.Dispose();
+    }
+
+    private static byte[] EnsurePooledBufferCapacity(byte[] buffer, int bytesWritten, int requiredLength)
+    {
+        if (requiredLength <= buffer.Length)
+        {
+            return buffer;
+        }
+
+        var expanded = _bufferPool.Rent(Math.Max(requiredLength, buffer.Length * 2));
+
+        Buffer.BlockCopy(buffer, 0, expanded, 0, bytesWritten);
+        _bufferPool.Return(buffer, true);
+
+        return expanded;
+    }
+
+    private static decimal CreateDecimal(int lo, int mid, int hi, int flags)
+    {
+        return new decimal(lo, mid, hi, (flags & int.MinValue) != 0, unchecked((byte)((uint)flags >> 16)));
     }
 
     #region Basic Read
@@ -243,26 +262,39 @@ internal class BufferReader : IDisposable
             return value;
         }
 
-        using (var mem = new MemoryStream())
+        var buffer = _bufferPool.Rent(Math.Max(_current.Count - _currentPosition, 32));
+        var length = 0;
+
+        try
         {
-            // copy all first segment 
-            var initialCount = _current.Count - _currentPosition;
-
-            mem.Write(_current.Array, _current.Offset + _currentPosition, initialCount);
-
-            MoveForward(initialCount);
-
-            // and go to next segment
-            while (_current[_currentPosition] != 0x00 && !IsEOF)
+            while (true)
             {
-                mem.WriteByte(_current[_currentPosition]);
+                EnsureCurrentSegment();
+                ENSURE(!IsEOF, "cstring must end with null terminator");
 
-                MoveForward(1);
+                var span = _current.AsSpan(_currentPosition, _current.Count - _currentPosition);
+                var terminatorIndex = span.IndexOf((byte)0x00);
+                var count = terminatorIndex >= 0 ? terminatorIndex : span.Length;
+
+                if (count > 0)
+                {
+                    buffer = EnsurePooledBufferCapacity(buffer, length, length + count);
+                    span.Slice(0, count).CopyTo(buffer.AsSpan(length, count));
+                    MoveForward(count);
+                    length += count;
+                }
+
+                if (terminatorIndex >= 0)
+                {
+                    MoveForward(1); // +1 to '\0'
+
+                    return StringEncoding.UTF8.GetString(buffer, 0, length);
+                }
             }
-
-            MoveForward(1); // +1 to '\0'
-
-            return StringEncoding.UTF8.GetString(mem.ToArray());
+        }
+        finally
+        {
+            _bufferPool.Return(buffer, true);
         }
     }
 
@@ -386,7 +418,7 @@ internal class BufferReader : IDisposable
         var c = ReadInt32();
         var d = ReadInt32();
 
-        return new decimal(new[] { a, b, c, d });
+        return CreateDecimal(a, b, c, d);
     }
 
     #endregion
@@ -412,14 +444,26 @@ internal class BufferReader : IDisposable
 
         if (_currentPosition + 16 <= _current.Count)
         {
+#if NETSTANDARD2_0
             value = _current.ReadGuid(_currentPosition);
+#else
+            value = new Guid(_current.AsSpan(_currentPosition, 16));
+#endif
 
             MoveForward(16);
         }
         else
         {
+#if NETSTANDARD2_0
             // can't use _tempoBuffer because Guid validate 16 bytes array length
             value = new Guid(ReadBytes(16));
+#else
+            Span<byte> buffer = stackalloc byte[16];
+
+            ReadTo(buffer);
+
+            value = new Guid(buffer);
+#endif
         }
 
         return value;
@@ -539,25 +583,29 @@ internal class BufferReader : IDisposable
     /// </summary>
     public Result<BsonDocument> ReadDocument(HashSet<string> fields = null)
     {
-        var doc = new BsonDocument();
+        var doc = fields == null || fields.Count == 0 ? new BsonDocument() : new BsonDocument(fields.Count);
 
         try
         {
             var length = ReadInt32();
             var end = Position + length - 5;
-            var remaining = fields == null || fields.Count == 0 ? null : new HashSet<string>(fields, StringComparer.OrdinalIgnoreCase);
+            var selectedFields = fields == null || fields.Count == 0 ? null : fields;
+            var selectedCount = 0;
 
-            while (Position < end && (remaining == null || remaining.Count > 0))
+            while (Position < end && (selectedFields == null || selectedCount < selectedFields.Count))
             {
-                var value = ReadElement(remaining, out var name);
+                var value = ReadElement(selectedFields, out var name);
 
                 // null value means are not selected field
                 if (value != null)
                 {
+                    var isNewField = !doc.ContainsKey(name);
                     doc[name] = value;
 
-                    // remove from remaining fields
-                    remaining?.Remove(name);
+                    if (selectedFields != null && isNewField)
+                    {
+                        selectedCount++;
+                    }
                 }
             }
 
@@ -658,12 +706,22 @@ internal class BufferReader : IDisposable
         {
             var length = ReadInt32();
             var subType = ReadByte();
-            var bytes = ReadBytes(length);
 
             switch (subType)
             {
-                case 0x00: return bytes;
-                case 0x04: return new Guid(bytes);
+                case 0x00:
+                    return ReadBytes(length);
+                case 0x04:
+                    if (length == 16)
+                    {
+                        return ReadGuid();
+                    }
+
+#if NETSTANDARD2_0
+                    return new Guid(ReadBytes(length));
+#else
+                    return new Guid(ReadBytes(length).AsSpan());
+#endif
             }
         }
         else if (type == 0x07) // ObjectId

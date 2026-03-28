@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 
 namespace LiteDbX.Engine;
 
@@ -12,7 +10,6 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal class SortService : IDisposable
 {
-    private static readonly ArrayPool<byte> _bufferPool = ArrayPool<byte>.Shared;
     private readonly BufferSlice _buffer;
 
     private readonly List<SortContainer> _containers = new();
@@ -24,13 +21,25 @@ internal class SortService : IDisposable
     private readonly EnginePragmas _pragmas;
     private readonly Lazy<Stream> _reader;
 
+    private static int[] CopyOrders(IReadOnlyList<int> orders)
+    {
+        var copy = new int[orders.Count];
+
+        for (var i = 0; i < orders.Count; i++)
+        {
+            copy[i] = orders[i];
+        }
+
+        return copy;
+    }
+
     public SortService(SortDisk disk, IReadOnlyList<int> orders, EnginePragmas pragmas)
     {
         _disk = disk;
         if (orders == null) throw new ArgumentNullException(nameof(orders));
         if (orders.Count == 0) throw new ArgumentException("Orders must contain at least one segment", nameof(orders));
 
-        _orders = orders as int[] ?? orders.ToArray();
+        _orders = orders as int[] ?? CopyOrders(orders);
         _pragmas = pragmas;
         _containerSize = disk.ContainerSize;
 
@@ -80,7 +89,7 @@ internal class SortService : IDisposable
         // slit all items in sorted containers
         foreach (var containerItems in SliptValues(items, _done))
         {
-            var container = new SortContainer(_pragmas.Collation, _containerSize, _orders);
+            var container = new SortContainer(_pragmas.Collation, _containerSize);
 
             // insert segmented items inside a container - reuse same buffer slice
             var order = _orders.Length == 1 ? _orders[0] : Query.Ascending;
@@ -131,20 +140,12 @@ internal class SortService : IDisposable
         }
         else
         {
-            var diffOrder = _orders.Length == 1 ? _orders[0] * -1 : -1;
+            current = GetFirstActiveContainer();
 
             // merge sort with all containers
-            while (_containers.Any(x => !x.IsEOF))
+            while (current != null)
             {
-                foreach (var container in _containers.Where(x => !x.IsEOF))
-                {
-                    var diff = container.Current.Key.CompareTo(current.Current.Key, _pragmas.Collation);
-
-                    if (diff == diffOrder)
-                    {
-                        current = container;
-                    }
-                }
+                current = GetNextContainer(current);
 
                 yield return current.Current;
 
@@ -153,21 +154,67 @@ internal class SortService : IDisposable
                 if (!current.MoveNext())
                 {
                     // now, current container must any new container that still have values
-                    current = _containers.FirstOrDefault(x => !x.IsEOF);
+                    current = GetFirstActiveContainer();
                 }
 
                 // after run MoveNext(), if container contains same lastKey, can return now
-                while (current?.Current.Key == lastKey)
+                while (current != null && current.Current.Key == lastKey)
                 {
                     yield return current.Current;
 
                     if (!current.MoveNext())
                     {
-                        current = _containers.FirstOrDefault(x => !x.IsEOF);
+                        current = GetFirstActiveContainer();
                     }
                 }
             }
         }
+    }
+
+    private SortContainer GetFirstActiveContainer()
+    {
+        for (var i = 0; i < _containers.Count; i++)
+        {
+            if (!_containers[i].IsEOF)
+            {
+                return _containers[i];
+            }
+        }
+
+        return null;
+    }
+
+    private SortContainer GetNextContainer(SortContainer current)
+    {
+        var best = current?.IsEOF == false ? current : null;
+
+        for (var i = 0; i < _containers.Count; i++)
+        {
+            var candidate = _containers[i];
+
+            if (candidate.IsEOF)
+            {
+                continue;
+            }
+
+            if (best == null)
+            {
+                best = candidate;
+                continue;
+            }
+
+            var diff = SortKey.Compare(candidate.Current.Key, best.Current.Key, _orders, _pragmas.Collation);
+            var candidateWins = _orders.Length == 1 && _orders[0] == Query.Descending
+                ? diff > 0
+                : diff < 0;
+
+            if (candidateWins)
+            {
+                best = candidate;
+            }
+        }
+
+        return best;
     }
 
     /// <summary>
