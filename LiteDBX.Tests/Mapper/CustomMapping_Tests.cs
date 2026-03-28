@@ -40,6 +40,33 @@ public class CustomMappingCtor_Tests
     }
 
     [Fact]
+    public void Deserialize_ObjectId_Value_To_String_Returns_Hex_String()
+    {
+        var mapper = new BsonMapper();
+        var id = ObjectId.NewObjectId();
+
+        var result = mapper.Deserialize(typeof(string), new BsonValue(id));
+
+        result.Should().Be(id.ToString());
+    }
+
+    [Fact]
+    public void String_Id_Property_Hydrates_From_ObjectId_Bson_Value()
+    {
+        var mapper = new BsonMapper();
+        var id = ObjectId.NewObjectId();
+
+        var entity = mapper.ToObject<ConcreteClass>(new BsonDocument
+        {
+            ["_id"] = id,
+            ["CustomName"] = "myname"
+        });
+
+        entity.CustomId.Should().Be(id.ToString());
+        entity.Name.Should().Be("myname");
+    }
+
+    [Fact]
     public void Key_Attribute_Is_Mapped_As_Id_With_AutoId_Disabled()
     {
         var mapper = new BsonMapper();

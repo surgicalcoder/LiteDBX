@@ -115,6 +115,23 @@ public class AutoId_Tests
     }
 
     [Fact]
+    public async Task AutoId_String_Property_Generates_ObjectId_And_Writes_Back_Hex_String()
+    {
+        await using var db = new LiteDatabase(new MemoryStream());
+        var col = db.GetCollection<EntityString>("string_autoid");
+        var entity = new EntityString { Id = null, Name = "John" };
+
+        var bsonId = await col.Insert(entity);
+        var loaded = await col.FindOne(x => x.Name == "John");
+
+        bsonId.IsObjectId.Should().BeTrue();
+        entity.Id.Should().Be(bsonId.AsObjectId.ToString());
+        loaded.Should().NotBeNull();
+        loaded!.Id.Should().Be(entity.Id);
+        loaded.Name.Should().Be("John");
+    }
+
+    [Fact]
     public async Task AutoId_No_Duplicate_After_Delete()
     {
         await using (var db = new LiteDatabase(new MemoryStream()))

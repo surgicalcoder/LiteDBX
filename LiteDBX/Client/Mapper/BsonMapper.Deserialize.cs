@@ -101,6 +101,13 @@ public partial class BsonMapper
             return value.AsArray;
         }
 
+        // bson ObjectId can hydrate into CLR string ids
+
+        if (type == typeof(string) && value.IsObjectId)
+        {
+            return value.AsObjectId.ToString();
+        }
+
         // raw values to native bson values
 
         if (_bsonTypes.Contains(type))
