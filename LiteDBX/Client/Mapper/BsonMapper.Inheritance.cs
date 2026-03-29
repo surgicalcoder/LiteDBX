@@ -191,9 +191,16 @@ public partial class BsonMapper
     {
         if (member == null) throw new ArgumentNullException(nameof(member));
 
+        value = NormalizeValueForMemberSerialization(member, value);
+
         if (member.Serialize != null)
         {
             return member.Serialize(value, this);
+        }
+
+        if (member.StorageType.HasValue)
+        {
+            return SerializeToStorageType(member.DataType, value, member.StorageType.Value);
         }
 
         if (preserveDirectStringValue && value is string str)
@@ -216,8 +223,126 @@ public partial class BsonMapper
         return Deserialize(member.DataType, value);
     }
 
+    internal bool TrySerializeExpressionValue(MemberMapper member, object value, out BsonValue bson, bool preserveDirectStringValue = false)
+    {
+        if (member == null)
+        {
+            bson = null;
+            return false;
+        }
+
+        if (value == null)
+        {
+            bson = BsonValue.Null;
+            return true;
+        }
+
+        var normalizedValue = NormalizeValueForMemberSerialization(member, value);
+        var targetType = Reflection.IsNullable(member.DataType)
+            ? Reflection.UnderlyingTypeOf(member.DataType)
+            : member.DataType;
+
+        if (normalizedValue != null && targetType.IsInstanceOfType(normalizedValue))
+        {
+            bson = SerializeMemberValue(member, normalizedValue, 0, preserveDirectStringValue);
+            return true;
+        }
+
+        if (member.StorageType.HasValue)
+        {
+            try
+            {
+                bson = SerializeToStorageType(member.DataType, value, member.StorageType.Value);
+                return true;
+            }
+            catch (Exception)
+            {
+                // fall back to default constant serialization when the raw value can't be coerced to the member's storage type
+            }
+        }
+
+        bson = null;
+        return false;
+    }
+
     internal bool RequiresMemberAwareSerialization(MemberMapper member)
-        => member != null && (member.StorageType.HasValue || member.Serialize != null || member.Deserialize != null);
+        => member != null &&
+           (
+               member.StorageType.HasValue ||
+               member.Serialize != null ||
+               member.Deserialize != null ||
+               TryGetCustomSerializer(member.DataType, member.DataType, out _) ||
+               TryGetCustomDeserializer(member.DataType, out _)
+           );
+
+    private object NormalizeValueForMemberSerialization(MemberMapper member, object value)
+    {
+        if (member == null || value == null)
+        {
+            return value;
+        }
+
+        var targetType = Reflection.IsNullable(member.DataType)
+            ? Reflection.UnderlyingTypeOf(member.DataType)
+            : member.DataType;
+
+        if (targetType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if (!TryExtractStringId(value, out var id) || string.IsNullOrWhiteSpace(id))
+        {
+            return value;
+        }
+
+        var stringConstructor = targetType.GetConstructor(new[] { typeof(string) });
+
+        if (stringConstructor != null)
+        {
+            return stringConstructor.Invoke(new object[] { id });
+        }
+
+        var idProperty = targetType.GetProperty("Id", BindingFlags.Instance | BindingFlags.Public);
+
+        if (idProperty?.CanWrite == true && idProperty.PropertyType == typeof(string))
+        {
+            var instance = Activator.CreateInstance(targetType);
+
+            if (instance != null)
+            {
+                idProperty.SetValue(instance, id);
+                return instance;
+            }
+        }
+
+        return value;
+    }
+
+    private static bool TryExtractStringId(object value, out string id)
+    {
+        switch (value)
+        {
+            case null:
+                id = null;
+                return false;
+
+            case string stringValue:
+                id = stringValue;
+                return true;
+        }
+
+        var idProperty = value.GetType().GetProperty("Id", BindingFlags.Instance | BindingFlags.Public);
+
+        if (idProperty?.CanRead == true && idProperty.PropertyType == typeof(string))
+        {
+            id = (string)idProperty.GetValue(value);
+            return true;
+        }
+
+        id = null;
+        return false;
+    }
 
     internal BsonValue SerializeToStorageType(Type memberType, object value, BsonType storageType)
     {

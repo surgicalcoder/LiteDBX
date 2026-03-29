@@ -137,6 +137,12 @@ internal class LinqExpressionVisitor : ExpressionVisitor
 
         var member = node.Member;
 
+        if (isParam && TryResolveScalarSerializedIdAccess(node))
+        {
+            Visit(node.Expression);
+            return node;
+        }
+
         // special types contains method access: string.Length, DateTime.Day, ...
         if (TryGetResolver(member.DeclaringType, out var type))
         {
@@ -274,6 +280,12 @@ internal class LinqExpressionVisitor : ExpressionVisitor
 
         ENSURE(_nodes.Count == 0, "counter stack must be zero to eval all properties/field over object");
 
+        if (_constantSerializationMember == null && value is bool booleanValue)
+        {
+            _builder.Append(booleanValue ? "true" : "false");
+            return node;
+        }
+
         var parameter = "p" + _paramIndex++;
 
         _builder.AppendFormat("@" + parameter);
@@ -282,7 +294,7 @@ internal class LinqExpressionVisitor : ExpressionVisitor
 
         // if type is string, use direct BsonValue(string) to avoid rules like TrimWhitespace/EmptyStringToNull in mapper
         var arg = type == null ? BsonValue.Null :
-            _constantSerializationMember != null ? _mapper.SerializeMemberValue(_constantSerializationMember, value, 0) :
+            _constantSerializationMember != null && _mapper.TrySerializeExpressionValue(_constantSerializationMember, value, out var serializedArg, type == typeof(string)) ? serializedArg :
             type == typeof(string) ? new BsonValue((string)value) :
             _mapper.Serialize(value.GetType(), value);
 
@@ -792,7 +804,45 @@ internal class LinqExpressionVisitor : ExpressionVisitor
 
         var member = entity.GetMember(expr);
 
-        return _mapper.RequiresMemberAwareSerialization(member) ? member : null;
+        if (_mapper.RequiresMemberAwareSerialization(member))
+        {
+            return member;
+        }
+
+        if (expr is MemberExpression node && TryResolveScalarSerializedIdAccess(node, out var parentMember))
+        {
+            return parentMember;
+        }
+
+        return null;
+    }
+
+    private bool TryResolveScalarSerializedIdAccess(MemberExpression node)
+    {
+        return TryResolveScalarSerializedIdAccess(node, out _);
+    }
+
+    private bool TryResolveScalarSerializedIdAccess(MemberExpression node, out MemberMapper serializationMember)
+    {
+        serializationMember = null;
+
+        if (!string.Equals(node.Member.Name, "Id", StringComparison.Ordinal) || node.Expression is not MemberExpression parentExpression)
+        {
+            return false;
+        }
+
+        var entity = _mapper.GetEntityMapper(_rootParameter.Type);
+        entity.WaitForInitialization();
+
+        var parentMember = entity.GetMember(parentExpression);
+
+        if (parentMember == null || parentMember.IsDbRef || !_mapper.RequiresMemberAwareSerialization(parentMember))
+        {
+            return false;
+        }
+
+        serializationMember = parentMember;
+        return true;
     }
 
     /// <summary>
