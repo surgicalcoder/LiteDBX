@@ -103,7 +103,10 @@ internal sealed class PageBufferManager
 
     public SegmentCandidate[] GetRetireableSegments(long nowTicks)
     {
-        if (!_config.Enabled) return Array.Empty<SegmentCandidate>();
+        if (!_config.Enabled)
+        {
+            return [];
+        }
 
         lock (_segments)
         {

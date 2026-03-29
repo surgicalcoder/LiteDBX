@@ -13,18 +13,12 @@ public static class StopWatchExtensions
         return new DisposableAction(stopwatch.Stop);
     }
 
-    private class DisposableAction : IDisposable
+    private class DisposableAction(Action action)
+        : IDisposable
     {
-        private readonly Action _action;
-
-        public DisposableAction(Action action)
-        {
-            _action = action;
-        }
-
         public void Dispose()
         {
-            _action();
+            action();
         }
     }
 }

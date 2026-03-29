@@ -14,7 +14,7 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal sealed class LiteTransaction : ILiteTransaction
 {
-    private static readonly AsyncLocal<LiteTransaction> _currentAmbient = new AsyncLocal<LiteTransaction>();
+    private static readonly AsyncLocal<LiteTransaction> _currentAmbient = new();
 
     private readonly TransactionMonitor _monitor;
     private readonly TransactionService _service;

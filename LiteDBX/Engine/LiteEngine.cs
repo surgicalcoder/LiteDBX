@@ -216,7 +216,7 @@ public partial class LiteEngine : ILiteEngine, IDisposable
     {
         if (_state.Disposed)
         {
-            return new List<Exception>();
+            return [];
         }
 
         _state.Disposed = true;
@@ -252,7 +252,7 @@ public partial class LiteEngine : ILiteEngine, IDisposable
     internal async ValueTask<List<Exception>> CloseAsync()
     {
         if (_state.Disposed)
-            return new List<Exception>();
+            return [];
 
         _state.Disposed = true;
 

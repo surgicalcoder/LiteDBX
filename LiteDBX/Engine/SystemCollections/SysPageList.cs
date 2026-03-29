@@ -4,27 +4,20 @@ using static LiteDbX.Constants;
 
 namespace LiteDbX.Engine;
 
-internal class SysPageList : SystemCollection
+internal class SysPageList(HeaderPage header, TransactionMonitor monitor)
+    : SystemCollection("$page_list")
 {
-    private readonly HeaderPage _header;
-    private readonly TransactionMonitor _monitor;
     private Dictionary<uint, string> _collections;
-
-    public SysPageList(HeaderPage header, TransactionMonitor monitor) : base("$page_list")
-    {
-        _header = header;
-        _monitor = monitor;
-    }
 
     public override IEnumerable<BsonDocument> Input(BsonValue options)
     {
         var pageID = GetOption(options, "pageID");
 
         // get the transaction that is currently driving this query context
-        var transaction = _monitor.GetCurrentTransaction();
+        var transaction = monitor.GetCurrentTransaction();
         var snapshot = transaction.CreateSnapshot(LockMode.Read, "$", false);
 
-        _collections = _header.GetCollections().ToDictionary(x => x.Value, x => x.Key);
+        _collections = header.GetCollections().ToDictionary(x => x.Value, x => x.Key);
 
         var result = pageID != null ? GetList((uint)pageID.AsInt32, null, transaction, snapshot) : GetAllList(transaction, snapshot);
 
@@ -37,7 +30,7 @@ internal class SysPageList : SystemCollection
     private IEnumerable<BsonDocument> GetAllList(TransactionService transaction, Snapshot snapshot)
     {
         // get empty page list, from header
-        foreach (var page in GetList(_header.FreeEmptyPageList, null, transaction, snapshot))
+        foreach (var page in GetList(header.FreeEmptyPageList, null, transaction, snapshot))
         {
             yield return page;
         }
