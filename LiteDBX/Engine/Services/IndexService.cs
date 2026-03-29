@@ -7,19 +7,9 @@ namespace LiteDbX.Engine;
 /// Implement a Index service - Add/Remove index nodes on SkipList
 /// Based on: http://igoro.com/archive/skip-lists-are-fascinating/
 /// </summary>
-internal class IndexService
+internal class IndexService(Snapshot snapshot, Collation collation, uint maxItemsCount)
 {
-    private readonly uint _maxItemsCount;
-    private readonly Snapshot _snapshot;
-
-    public IndexService(Snapshot snapshot, Collation collation, uint maxItemsCount)
-    {
-        _snapshot = snapshot;
-        Collation = collation;
-        _maxItemsCount = maxItemsCount;
-    }
-
-    public Collation Collation { get; }
+    public Collation Collation { get; } = collation;
 
     /// <summary>
     /// Create a new index and returns head page address (skip list)
@@ -30,10 +20,10 @@ internal class IndexService
         var bytesLength = IndexNode.GetNodeLength(MAX_LEVEL_LENGTH, BsonValue.MinValue, out var keyLength);
 
         // get a new empty page (each index contains its own linked nodes)
-        var indexPage = _snapshot.NewPage<IndexPage>();
+        var indexPage = snapshot.NewPage<IndexPage>();
 
         // create index ref
-        var index = _snapshot.CollectionPage.InsertCollectionIndex(name, expr, unique);
+        var index = snapshot.CollectionPage.InsertCollectionIndex(name, expr, unique);
 
         // insert head/tail nodes
         var head = indexPage.InsertIndexNode(index.Slot, MAX_LEVEL_LENGTH, BsonValue.MinValue, PageAddress.Empty, bytesLength);
@@ -90,7 +80,7 @@ internal class IndexService
             throw LiteException.InvalidIndexKey($"Index key must be less than {MAX_INDEX_KEY_LENGTH} bytes.");
         }
 
-        var indexPage = _snapshot.GetFreeIndexPage(bytesLength, ref index.FreeIndexPageList);
+        var indexPage = snapshot.GetFreeIndexPage(bytesLength, ref index.FreeIndexPageList);
 
         // create node in buffer
         var node = indexPage.InsertIndexNode(index.Slot, insertLevels, key, dataBlock, bytesLength);
@@ -107,7 +97,7 @@ internal class IndexService
             // while: scan from left to right
             while (!right.IsEmpty && right != index.Tail)
             {
-                ENSURE(counter++ < _maxItemsCount, "Detected loop in AddNode({0})", node.Position);
+                ENSURE(counter++ < maxItemsCount, "Detected loop in AddNode({0})", node.Position);
 
                 var rightNode = GetNode(right);
 
@@ -170,7 +160,7 @@ internal class IndexService
         }
 
         // fix page position in free list slot
-        _snapshot.AddOrRemoveFreeIndexList(node.Page, ref index.FreeIndexPageList);
+        snapshot.AddOrRemoveFreeIndexList(node.Page, ref index.FreeIndexPageList);
 
         return node;
     }
@@ -206,7 +196,7 @@ internal class IndexService
             return null;
         }
 
-        var indexPage = _snapshot.GetPage<IndexPage>(address.PageID);
+        var indexPage = snapshot.GetPage<IndexPage>(address.PageID);
 
         return indexPage.GetIndexNode(address.Index);
     }
@@ -221,7 +211,7 @@ internal class IndexService
 
         while (node != null)
         {
-            ENSURE(counter++ < _maxItemsCount, "Detected loop in GetNodeList({0})", nodeAddress);
+            ENSURE(counter++ < maxItemsCount, "Detected loop in GetNodeList({0})", nodeAddress);
 
             yield return node;
 
@@ -235,12 +225,12 @@ internal class IndexService
     public void DeleteAll(PageAddress pkAddress)
     {
         var node = GetNode(pkAddress);
-        var indexes = _snapshot.CollectionPage.GetCollectionIndexesSlots();
+        var indexes = snapshot.CollectionPage.GetCollectionIndexesSlots();
         var counter = 0u;
 
         while (node != null)
         {
-            ENSURE(counter++ < _maxItemsCount, "Detected loop in DeleteAll({0})", pkAddress);
+            ENSURE(counter++ < maxItemsCount, "Detected loop in DeleteAll({0})", pkAddress);
 
             DeleteSingleNode(node, indexes[node.Slot]);
 
@@ -256,12 +246,12 @@ internal class IndexService
     {
         var last = GetNode(pkAddress);
         var node = GetNode(last.NextNode); // starts in first node after PK
-        var indexes = _snapshot.CollectionPage.GetCollectionIndexesSlots();
+        var indexes = snapshot.CollectionPage.GetCollectionIndexesSlots();
         var counter = 0u;
 
         while (node != null)
         {
-            ENSURE(counter++ < _maxItemsCount, "Detected loop in DeleteList({0})", pkAddress);
+            ENSURE(counter++ < maxItemsCount, "Detected loop in DeleteList({0})", pkAddress);
 
             if (toDelete.Contains(node.Position))
             {
@@ -307,7 +297,7 @@ internal class IndexService
 
         node.Page.DeleteIndexNode(node.Position.Index);
 
-        _snapshot.AddOrRemoveFreeIndexList(node.Page, ref index.FreeIndexPageList);
+        snapshot.AddOrRemoveFreeIndexList(node.Page, ref index.FreeIndexPageList);
     }
 
     /// <summary>
@@ -316,7 +306,7 @@ internal class IndexService
     public void DropIndex(CollectionIndex index)
     {
         var slot = index.Slot;
-        var pkIndex = _snapshot.CollectionPage.PK;
+        var pkIndex = snapshot.CollectionPage.PK;
 
         foreach (var pkNode in FindAll(pkIndex, Query.Ascending))
         {
@@ -360,7 +350,7 @@ internal class IndexService
 
         while (!cur.GetNextPrev(0, order).IsEmpty)
         {
-            ENSURE(counter++ < _maxItemsCount, "Detected loop in FindAll({0})", index.Name);
+            ENSURE(counter++ < maxItemsCount, "Detected loop in FindAll({0})", index.Name);
 
             cur = GetNode(cur.GetNextPrev(0, order));
 
@@ -391,7 +381,7 @@ internal class IndexService
 
             while (!right.IsEmpty)
             {
-                ENSURE(counter++ < _maxItemsCount, "Detected loop in Find({0}, {1})", index.Name, value);
+                ENSURE(counter++ < maxItemsCount, "Detected loop in Find({0}, {1})", index.Name, value);
 
                 var rightNode = GetNode(right);
 
