@@ -23,14 +23,18 @@ public class RefObjectIdEqualityTests
     public void GetExpression_Boolean_Constant_And_Ref_Comparison_Does_Not_Create_Bare_Parameter_Predicate()
     {
         var mapper = new RefObjectIdMapper();
+        var always = true;
 
-        var expression = mapper.GetExpression<ScopedChildEntity, bool>(entity => true && entity.Scope == ScopeId);
+        var expression = mapper.GetExpression<ScopedChildEntity, bool>(entity => always && entity.Scope == ScopeId);
+        var normalizedSource = expression.Source.Replace(" ", string.Empty);
 
-        expression.Source.Should().Contain("true");
+        normalizedSource.Should().Contain("(@p0)=true");
         expression.Source.Should().Contain("$.Scope");
-        expression.Parameters.Count.Should().Be(1);
-        expression.Parameters["p0"].IsObjectId.Should().BeTrue();
-        expression.Parameters["p0"].AsObjectId.ToString().Should().Be(ScopeId);
+        expression.Parameters.Count.Should().Be(2);
+        expression.Parameters["p0"].IsBoolean.Should().BeTrue();
+        expression.Parameters["p0"].AsBoolean.Should().BeTrue();
+        expression.Parameters["p1"].IsObjectId.Should().BeTrue();
+        expression.Parameters["p1"].AsObjectId.ToString().Should().Be(ScopeId);
     }
 
     private static void AssertExpression(BsonExpression expression, string expectedOperator)

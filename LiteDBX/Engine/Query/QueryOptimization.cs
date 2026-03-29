@@ -193,7 +193,7 @@ internal class QueryOptimization
     {
         value = false;
 
-        if (expression == null || !expression.IsScalar)
+        if (expression == null)
         {
             return false;
         }

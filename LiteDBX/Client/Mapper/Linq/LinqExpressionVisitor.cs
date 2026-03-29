@@ -280,11 +280,6 @@ internal class LinqExpressionVisitor : ExpressionVisitor
 
         ENSURE(_nodes.Count == 0, "counter stack must be zero to eval all properties/field over object");
 
-        if (_constantSerializationMember == null && value is bool booleanValue)
-        {
-            _builder.Append(booleanValue ? "true" : "false");
-            return node;
-        }
 
         var parameter = "p" + _paramIndex++;
 
