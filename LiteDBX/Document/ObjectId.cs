@@ -189,16 +189,21 @@ public class ObjectId : IComparable<ObjectId>, IEquatable<ObjectId>
     /// </summary>
     public int CompareTo(ObjectId other)
     {
-        var r = this.Timestamp.CompareTo(other.Timestamp);
+        if (other is null)
+        {
+            return 1;
+        }
+
+        var r = ((uint)this.Timestamp).CompareTo((uint)other.Timestamp);
         if (r != 0) return r;
 
-        r = this.Machine.CompareTo(other.Machine);
+        r = ((uint)this.Machine).CompareTo((uint)other.Machine);
         if (r != 0) return r;
 
-        r = this.Pid.CompareTo(other.Pid);
-        if (r != 0) return r < 0 ? -1 : 1;
+        r = ((ushort)this.Pid).CompareTo((ushort)other.Pid);
+        if (r != 0) return r;
 
-        return this.Increment.CompareTo(other.Increment);
+        return ((uint)this.Increment).CompareTo((uint)other.Increment);
     }
 
     /// <summary>

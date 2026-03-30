@@ -15,6 +15,9 @@ namespace LiteDbX;
 /// </summary>
 public static class LiteDbXQueryableAsyncExtensions
 {
+    public static IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IQueryable<T> source, CancellationToken cancellationToken = default)
+        => LowerToNativeQueryable(source, LiteDbXQueryTerminalKind.ToAsyncEnumerable).ToEnumerable(cancellationToken);
+
     public static ValueTask<List<T>> ToListAsync<T>(this IQueryable<T> source, CancellationToken cancellationToken = default)
         => LowerToNativeQueryable(source, LiteDbXQueryTerminalKind.ToList).ToList(cancellationToken);
 

@@ -29,6 +29,7 @@ internal enum LiteDbXQueryTerminalKind
     None,
     ToDocuments,
     ToEnumerable,
+    ToAsyncEnumerable,
     ToList,
     ToArray,
     First,
