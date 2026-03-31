@@ -11,12 +11,12 @@ using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 #endif
-using static LiteDbX.Constants;
-
 namespace LiteDbX.Engine;
 
-internal class AesGcmStream : Stream, IEncryptedStream
+public class AesGcmStream : Stream, IEncryptedStream
 {
+    private const int PAGE_SIZE = EncryptionConstants.PageSize;
+    private const int ENCRYPTION_SALT_SIZE = EncryptionConstants.SaltSize;
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const int HeaderMagicOffset = 1 + ENCRYPTION_SALT_SIZE;
@@ -65,12 +65,12 @@ internal class AesGcmStream : Stream, IEncryptedStream
 
                 if (isEncrypted != 1)
                 {
-                    throw LiteException.FileNotEncrypted();
+                    throw CreateFileNotEncryptedException();
                 }
 
                 if (!HasMarker(header))
                 {
-                    throw LiteException.FileNotEncrypted();
+                    throw CreateFileNotEncryptedException();
                 }
 
                 Salt = new byte[ENCRYPTION_SALT_SIZE];
@@ -451,7 +451,7 @@ internal class AesGcmStream : Stream, IEncryptedStream
 
         _stream.Position = 0;
         _stream.Write(header, 0, header.Length);
-        _stream.FlushToDisk();
+        FlushToDisk(_stream);
     }
 
     private void ValidatePassword(byte[] header)
@@ -471,12 +471,12 @@ internal class AesGcmStream : Stream, IEncryptedStream
         }
         catch (Exception ex) when (IsAuthenticationException(ex))
         {
-            throw LiteException.InvalidPassword();
+            throw CreateInvalidPasswordException();
         }
 
         if (!plaintext.SequenceEqual(PasswordCheckPlaintext))
         {
-            throw LiteException.InvalidPassword();
+            throw CreateInvalidPasswordException();
         }
     }
 
@@ -486,7 +486,7 @@ internal class AesGcmStream : Stream, IEncryptedStream
 
         if (ReadExact(_stream, header, 0, PAGE_SIZE) != PAGE_SIZE)
         {
-            throw LiteException.FileNotEncrypted();
+            throw CreateFileNotEncryptedException();
         }
     }
 
@@ -520,7 +520,7 @@ internal class AesGcmStream : Stream, IEncryptedStream
         }
         catch (Exception ex) when (IsAuthenticationException(ex))
         {
-            throw LiteException.InvalidPassword();
+            throw CreateInvalidPasswordException();
         }
     }
 
@@ -548,7 +548,7 @@ internal class AesGcmStream : Stream, IEncryptedStream
         }
         catch (Exception ex) when (IsAuthenticationException(ex))
         {
-            throw LiteException.InvalidPassword();
+            throw CreateInvalidPasswordException();
         }
     }
 
@@ -752,6 +752,28 @@ internal class AesGcmStream : Stream, IEncryptedStream
     private static long GetRecordOffset(long pageIndex)
     {
         return PAGE_SIZE + (pageIndex * EncryptedPageSize);
+    }
+
+    private static LiteException CreateFileNotEncryptedException()
+    {
+        return new LiteException(LiteException.NOT_ENCRYPTED, "File is not encrypted.");
+    }
+
+    private static LiteException CreateInvalidPasswordException()
+    {
+        return new LiteException(LiteException.INVALID_PASSWORD, "Invalid password.");
+    }
+
+    private static void FlushToDisk(Stream stream)
+    {
+        if (stream is FileStream fileStream)
+        {
+            fileStream.Flush(true);
+        }
+        else
+        {
+            stream.Flush();
+        }
     }
 }
 

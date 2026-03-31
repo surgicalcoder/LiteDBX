@@ -59,6 +59,7 @@ public class LiteException : Exception
     public const int ENTITY_INITIALIZATION_FAILED = 219;
     public const int MAPPER_NOT_FOUND = 220;
     public const int MAPPING_ERROR = 221;
+    public const int ENCRYPTION_PROVIDER_NOT_REGISTERED = 222;
 
 
     public const int INVALID_DATAFILE_STATE = 999;
@@ -340,6 +341,13 @@ public class LiteException : Exception
     internal static LiteException InvalidPassword()
     {
         return new LiteException(INVALID_PASSWORD, "Invalid password.");
+    }
+
+    internal static LiteException EncryptionProviderNotRegistered(AESEncryptionType encryptionType)
+    {
+        return new LiteException(ENCRYPTION_PROVIDER_NOT_REGISTERED,
+            "Encryption provider for mode '{0}' is not registered. Add the required package and register its provider before opening the database.",
+            encryptionType);
     }
 
     internal static LiteException IllegalDeserializationType(string typeName)

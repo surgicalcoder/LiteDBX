@@ -44,7 +44,7 @@ public class AesStream : Stream, IEncryptedStream
     {
         if (aesEncryption == AESEncryptionType.GCM)
         {
-            throw new NotSupportedException("Use AesGcmStream for AES-GCM encrypted streams.");
+            throw new NotSupportedException("AES-GCM is provided by an optional encryption provider. Reference the GCM package and register its provider before use.");
         }
 
         _stream = stream;

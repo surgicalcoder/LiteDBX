@@ -11,14 +11,12 @@ namespace LiteDbX.Internals;
 
 public class Aes_Tests
 {
-    [Theory]
-    [InlineData(AESEncryptionType.ECB)]
-    [InlineData(AESEncryptionType.GCM)]
-    public void Encrypt_Decrypt_Stream(AESEncryptionType encryptionType)
+    [Fact]
+    public void Encrypt_Decrypt_Stream()
     {
         using (var media = new MemoryStream())
         {
-            using (var crypto = CreateEncryptedStream("abc", media, encryptionType))
+            using (var crypto = new AesStream("abc", media))
             {
                 var input0 = new byte[8192];
                 var input1 = new byte[8192];
@@ -67,33 +65,6 @@ public class Aes_Tests
                 output2.All(x => x == 102).Should().BeTrue();
             }
         }
-    }
-
-    [Fact]
-    public void Encrypted_Stream_Factory_Prefers_Stored_Mode_On_Reopen()
-    {
-        byte[] persisted;
-        var input = Enumerable.Repeat((byte)123, 8192).ToArray();
-
-        using (var media = new MemoryStream())
-        {
-            using (var crypto = EncryptedStreamFactory.Open("abc", media, AESEncryptionType.GCM))
-            {
-                crypto.Write(input, 0, input.Length);
-                crypto.Flush();
-                persisted = media.ToArray();
-            }
-        }
-
-        using var reopenedMedia = new MemoryStream(persisted);
-        using var reopened = EncryptedStreamFactory.Open("abc", reopenedMedia, AESEncryptionType.ECB);
-
-        var output = new byte[8192];
-        reopened.ReadExactly(output, 0, output.Length);
-
-        output.Should().Equal(input);
-        reopened.Should().BeAssignableTo<IEncryptedStream>();
-        ((IEncryptedStream)reopened).EncryptionType.Should().Be(AESEncryptionType.GCM);
     }
 
     /// <summary>
@@ -179,59 +150,4 @@ public class Aes_Tests
         }
     }
 
-    [Fact]
-    public void AesGcmStream_Invalid_Password()
-    {
-        byte[] persisted;
-
-        using (var memoryStream = new MemoryStream())
-        {
-            using (new AesGcmStream("password", memoryStream))
-            {
-                persisted = memoryStream.ToArray();
-            }
-        }
-
-        Action act = () =>
-        {
-            using var encrypted = new AesGcmStream("wrong-password", new MemoryStream(persisted));
-        };
-
-        act.Should().Throw<LiteException>();
-    }
-
-    [Fact]
-    public void AesGcmStream_Tampered_Page_Fails_On_Read()
-    {
-        byte[] persisted;
-        var input = Enumerable.Repeat((byte)7, 8192).ToArray();
-
-        using (var memoryStream = new MemoryStream())
-        {
-            using (var crypto = new AesGcmStream("password", memoryStream))
-            {
-                crypto.Write(input, 0, input.Length);
-                crypto.Flush();
-                persisted = memoryStream.ToArray();
-            }
-        }
-
-        persisted[8192 + 24] ^= 0x5A;
-
-        Action act = () =>
-        {
-            using var encrypted = new AesGcmStream("password", new MemoryStream(persisted));
-            var output = new byte[8192];
-            encrypted.ReadExactly(output, 0, output.Length);
-        };
-
-        act.Should().Throw<LiteException>();
-    }
-
-    private static Stream CreateEncryptedStream(string password, Stream stream, AESEncryptionType encryptionType)
-    {
-        return encryptionType == AESEncryptionType.GCM
-            ? new AesGcmStream(password, stream)
-            : new AesStream(password, stream);
-    }
 }

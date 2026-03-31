@@ -8,17 +8,40 @@ internal static class EncryptedStreamFactory
 {
     public static Stream Open(string password, Stream stream, AESEncryptionType aesEncryption)
     {
-        if (stream.Length >= PAGE_SIZE && AesGcmStream.HasMarker(stream))
+        if (stream.Length >= PAGE_SIZE)
         {
-            return new AesGcmStream(password, stream);
+            if (GcmEncryptionMarkerProbe.HasMarker(stream))
+            {
+                if (!EncryptionProviderRegistry.TryGet(AESEncryptionType.GCM, out var gcmProvider))
+                {
+                    throw LiteException.EncryptionProviderNotRegistered(AESEncryptionType.GCM);
+                }
+
+                return gcmProvider.Open(password, stream);
+            }
+
+            foreach (var provider in EncryptionProviderRegistry.GetRegisteredProviders())
+            {
+                if (provider.IsMatch(stream))
+                {
+                    return provider.Open(password, stream);
+                }
+            }
+
+            return new AesStream(password, stream);
         }
 
-        if (stream.Length < PAGE_SIZE && aesEncryption == AESEncryptionType.GCM)
+        if (aesEncryption == AESEncryptionType.ECB)
         {
-            return new AesGcmStream(password, stream);
+            return new AesStream(password, stream);
         }
 
-        return new AesStream(password, stream);
+        if (!EncryptionProviderRegistry.TryGet(aesEncryption, out var selectedProvider))
+        {
+            throw LiteException.EncryptionProviderNotRegistered(aesEncryption);
+        }
+
+        return selectedProvider.Open(password, stream);
     }
 
     public static long GetLogicalLength(Stream stream, string password)
@@ -32,9 +55,25 @@ internal static class EncryptedStreamFactory
             return NormalizePlainLength(stream, length);
         }
 
-        if (length >= PAGE_SIZE && AesGcmStream.HasMarker(stream))
+        if (length >= PAGE_SIZE)
         {
-            return NormalizeGcmLength(stream, length);
+            if (GcmEncryptionMarkerProbe.HasMarker(stream))
+            {
+                if (!EncryptionProviderRegistry.TryGet(AESEncryptionType.GCM, out var gcmProvider))
+                {
+                    throw LiteException.EncryptionProviderNotRegistered(AESEncryptionType.GCM);
+                }
+
+                return gcmProvider.GetLogicalLength(stream);
+            }
+
+            foreach (var provider in EncryptionProviderRegistry.GetRegisteredProviders())
+            {
+                if (provider.IsMatch(stream))
+                {
+                    return provider.GetLogicalLength(stream);
+                }
+            }
         }
 
         return NormalizeEcbLength(stream, length);
@@ -64,19 +103,6 @@ internal static class EncryptedStreamFactory
         }
 
         return normalizedLength > 0 ? normalizedLength - PAGE_SIZE : 0;
-    }
-
-    private static long NormalizeGcmLength(Stream stream, long length)
-    {
-        var normalizedLength = AesGcmStream.NormalizePhysicalLength(length);
-
-        if (normalizedLength != length && stream.CanWrite)
-        {
-            stream.SetLength(normalizedLength);
-            stream.FlushToDisk();
-        }
-
-        return AesGcmStream.GetLogicalLength(normalizedLength);
     }
 }
 

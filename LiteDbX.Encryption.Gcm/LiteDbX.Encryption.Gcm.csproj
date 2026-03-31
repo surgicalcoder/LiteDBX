@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>netstandard2.0;net10.0;netstandard2.1</TargetFrameworks>
@@ -7,23 +7,23 @@
         <VersionPrefix>5.0.21</VersionPrefix>
         <PackageVersion>5.0.21</PackageVersion>
         <Authors>SurgicalCoder, Maurício David et al.</Authors>
-        <Product>LiteDbX</Product>
-        <Description>LiteDbX is a modern async first rewrite of LiteDB, evolving the single file .NET document database with a redesigned engine, non-thread-affine transactions, async streaming queries, and improved shared-mode behavior.</Description>
+        <Product>LiteDbX.Encryption.Gcm</Product>
+        <Description>Optional AES-GCM encryption provider for LiteDbX.</Description>
         <Copyright>MIT</Copyright>
         <NeutralLanguage>en-US</NeutralLanguage>
-        <Title>LiteDbX</Title>
-        <PackageId>LiteDbX</PackageId>
-        <PackageTags>database nosql embedded</PackageTags>
+        <Title>LiteDbX.Encryption.Gcm</Title>
+        <PackageId>LiteDbX.Encryption.Gcm</PackageId>
+        <PackageTags>database nosql embedded encryption aes gcm</PackageTags>
         <PackageIcon>icon_64x64.png</PackageIcon>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://www.litedb.org</PackageProjectUrl>
         <RepositoryUrl>https://github.com/surgicalcoder/LiteDbX</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <RootNamespace>LiteDbX</RootNamespace>
-        <AssemblyName>LiteDbX</AssemblyName>
+        <RootNamespace>LiteDbX.Encryption.Gcm</RootNamespace>
+        <AssemblyName>LiteDbX.Encryption.Gcm</AssemblyName>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>1701;1702;1705;1591;0618</NoWarn>
-        <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\LiteDB.xml</DocumentationFile>
+        <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\LiteDbX.Encryption.Gcm.xml</DocumentationFile>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
     </PropertyGroup>
@@ -34,16 +34,16 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Compile Remove="Engine\Disk\Streams\AesGcmStream.cs" />
+        <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="System.Buffers" Version="4.6.1" />
-        <PackageReference Include="System.Memory" Version="4.6.3" />
-        <!-- Required for IAsyncEnumerable<T>, IAsyncDisposable, and IAsyncEnumerator<T> on netstandard2.0 -->
-        <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.5" />
+        <ProjectReference Include="..\LiteDbX\LiteDbX.csproj" />
     </ItemGroup>
 
-    <!-- End References -->
+    <ItemGroup>
+        <Compile Include="..\LiteDbX\Engine\Disk\Streams\AesGcmStream.cs" Link="AesGcmStream.cs" />
+    </ItemGroup>
 
 </Project>
+

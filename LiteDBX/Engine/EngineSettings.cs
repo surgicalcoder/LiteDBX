@@ -74,7 +74,9 @@ public class EngineSettings
     public MemoryCacheConfig MemoryCacheConfig { get; set; } = new MemoryCacheConfig();
 
     /// <summary>
-    /// Optional value for type of AES Encryption used. Defaults to ECB, options are ECB or GCM. If password not provided, will not take affect.
+    /// Optional value for type of AES Encryption used. Defaults to ECB, options are ECB or GCM.
+    /// If password is not provided, encryption will not be used.
+    /// ECB is built in. GCM requires the optional provider package to be referenced and registered.
     /// </summary>
     public AESEncryptionType AESEncryption { get; set; }
 

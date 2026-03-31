@@ -1,8 +1,6 @@
-using System.IO;
-
 namespace LiteDbX.Engine;
 
-internal interface IEncryptedStream
+public interface IEncryptedStream
 {
     AESEncryptionType EncryptionType { get; }
 }

@@ -74,6 +74,7 @@ public class ConnectionString
     /// "encryption": Return how AES encryption will be used (default: ECB).
     /// Only for file-based databases. For in-memory databases, encryption is not supported and will be ignored if specified. If no password specified, encryption will not be used.
     /// For file-based databases, if encryption is specified, the database file will be encrypted using AES encryption with the specified mode.
+    /// ECB is built in. GCM requires the optional provider package to be referenced and registered.
     /// The password provided in the "password" attribute will be used to encrypt and decrypt the data pages.
     /// If encryption is not specified, the database file will not be encrypted.              
     /// </summary>
