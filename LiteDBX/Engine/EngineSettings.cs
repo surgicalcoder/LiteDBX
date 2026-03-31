@@ -74,28 +74,33 @@ public class EngineSettings
     public MemoryCacheConfig MemoryCacheConfig { get; set; } = new MemoryCacheConfig();
 
     /// <summary>
+    /// Optional value for type of AES Encryption used. Defaults to ECB, options are ECB or GCM. If password not provided, will not take affect.
+    /// </summary>
+    public AESEncryptionType AESEncryption { get; set; }
+
+    /// <summary>
     /// Create new IStreamFactory for datafile
     /// </summary>
     internal IStreamFactory CreateDataFactory(bool useAesStream = true)
     {
         if (DataStream != null)
         {
-            return new StreamFactory(DataStream, Password);
+            return new StreamFactory(DataStream, Password, AESEncryption);
         }
 
         if (Filename == ":memory:")
         {
-            return new StreamFactory(new MemoryStream(), Password);
+            return new StreamFactory(new MemoryStream(), Password, AESEncryption);
         }
 
         if (Filename == ":temp:")
         {
-            return new StreamFactory(new TempStream(), Password);
+            return new StreamFactory(new TempStream(), Password, AESEncryption);
         }
 
         if (!string.IsNullOrEmpty(Filename))
         {
-            return new FileStreamFactory(Filename, Password, ReadOnly, false, useAesStream);
+            return new FileStreamFactory(Filename, Password, ReadOnly, false, useAesStream, AESEncryption);
         }
 
         throw new ArgumentException("EngineSettings must have Filename or DataStream as data source");
@@ -108,27 +113,27 @@ public class EngineSettings
     {
         if (LogStream != null)
         {
-            return new StreamFactory(LogStream, Password);
+            return new StreamFactory(LogStream, Password, AESEncryption);
         }
 
         if (Filename == ":memory:")
         {
-            return new StreamFactory(new MemoryStream(), Password);
+            return new StreamFactory(new MemoryStream(), Password, AESEncryption);
         }
 
         if (Filename == ":temp:")
         {
-            return new StreamFactory(new TempStream(), Password);
+            return new StreamFactory(new TempStream(), Password, AESEncryption);
         }
 
         if (!string.IsNullOrEmpty(Filename))
         {
             var logName = FileHelper.GetLogFile(Filename);
 
-            return new FileStreamFactory(logName, Password, ReadOnly, false);
+            return new FileStreamFactory(logName, Password, ReadOnly, false, aesEncryption: AESEncryption);
         }
 
-        return new StreamFactory(new MemoryStream(), Password);
+        return new StreamFactory(new MemoryStream(), Password, AESEncryption);
     }
 
     /// <summary>
@@ -138,26 +143,26 @@ public class EngineSettings
     {
         if (TempStream != null)
         {
-            return new StreamFactory(TempStream, Password);
+            return new StreamFactory(TempStream, Password, AESEncryption);
         }
 
         if (Filename == ":memory:")
         {
-            return new StreamFactory(new MemoryStream(), Password);
+            return new StreamFactory(new MemoryStream(), Password, AESEncryption);
         }
 
         if (Filename == ":temp:")
         {
-            return new StreamFactory(new TempStream(), Password);
+            return new StreamFactory(new TempStream(), Password, AESEncryption);
         }
 
         if (!string.IsNullOrEmpty(Filename))
         {
             var tempName = FileHelper.GetTempFile(Filename);
 
-            return new FileStreamFactory(tempName, Password, false, true);
+            return new FileStreamFactory(tempName, Password, false, true, aesEncryption: AESEncryption);
         }
 
-        return new StreamFactory(new TempStream(), Password);
+        return new StreamFactory(new TempStream(), Password, AESEncryption);
     }
 }

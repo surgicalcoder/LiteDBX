@@ -12,6 +12,7 @@ public class ConnectionString_Tests
         var onlyfile = new ConnectionString(@"demo.db");
 
         onlyfile.Filename.Should().Be(@"demo.db");
+        onlyfile.AESEncryption.Should().Be(AESEncryptionType.ECB);
 
         // file with spaces without "
         var normal = new ConnectionString(@"filename=c:\only file\demo.db");
@@ -35,6 +36,10 @@ public class ConnectionString_Tests
         var lockFile = new ConnectionString(@"filename=demo.db;connection=LockFile");
 
         lockFile.Connection.Should().Be(ConnectionType.LockFile);
+
+        var gcm = new ConnectionString(@"filename=demo.db;password=secret;encryption=GCM");
+
+        gcm.AESEncryption.Should().Be(AESEncryptionType.GCM);
     }
 
     [Fact]

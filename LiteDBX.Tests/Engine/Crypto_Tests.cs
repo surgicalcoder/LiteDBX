@@ -1,5 +1,7 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using LiteDbX.Engine;
@@ -16,7 +18,7 @@ public class Crypto_Tests
         var log = new MemoryStream();
         var settings = new EngineSettings { DataStream = data, LogStream = log };
 
-        using (var e = new LiteEngine(settings))
+        await using (var e = new LiteEngine(settings))
         {
             await CreateDatabase(e);
 
@@ -27,12 +29,14 @@ public class Crypto_Tests
         }
     }
 
-    [Fact]
-    public async Task Crypto_Datafile()
+    [Theory]
+    [InlineData(AESEncryptionType.ECB)]
+    [InlineData(AESEncryptionType.GCM)]
+    public async Task Crypto_Datafile(AESEncryptionType encryptionType)
     {
         var data = new MemoryStream();
         var log = new MemoryStream();
-        var settings = new EngineSettings { DataStream = data, LogStream = log, Password = "abc" };
+        var settings = new EngineSettings { DataStream = data, LogStream = log, Password = "abc", AESEncryption = encryptionType };
 
         using (var e = new LiteEngine(settings))
         {
@@ -43,12 +47,71 @@ public class Crypto_Tests
             dataStr.Should().NotContain("Mauricio");
 
             // Use a non-owning LiteDatabase wrapper to query
-            using var db = new LiteDatabase(e, disposeOnClose: false);
+            await using var db = new LiteDatabase(e, disposeOnClose: false);
             var col = db.GetCollection("mycol");
             var doc = await col.FindById(1);
 
             doc["name"].AsString.Should().Be("Mauricio");
             (data.Length / 8192).Should().Be(5);
+        }
+    }
+
+    [Theory]
+    [InlineData(AESEncryptionType.ECB)]
+    [InlineData(AESEncryptionType.GCM)]
+    public async Task Crypto_File_Datafile_Can_Reopen_With_Opposite_Config(AESEncryptionType encryptionType)
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"litedbx-crypto-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var createSettings = new EngineSettings
+            {
+                Filename = file,
+                Password = "abc",
+                AESEncryption = encryptionType
+            };
+
+            await using (var engine = new LiteEngine(createSettings))
+            {
+                await CreateDatabase(engine);
+            }
+
+            var fileText = Encoding.UTF8.GetString(File.ReadAllBytes(file));
+            fileText.Should().NotContain("mycol");
+            fileText.Should().NotContain("Mauricio");
+
+            var reopenSettings = new EngineSettings
+            {
+                Filename = file,
+                Password = "abc",
+                AESEncryption = encryptionType == AESEncryptionType.ECB ? AESEncryptionType.GCM : AESEncryptionType.ECB
+            };
+
+            await using (var reopenedEngine = new LiteEngine(reopenSettings))
+            await using (var db = new LiteDatabase(reopenedEngine, disposeOnClose: false))
+            {
+                var col = db.GetCollection("mycol");
+                var doc = await col.FindById(1);
+
+                doc["name"].AsString.Should().Be("Mauricio");
+            }
+        }
+        finally
+        {
+            for (var attempt = 0; attempt < 5 && File.Exists(file); attempt++)
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (IOException) when (attempt < 4)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    Thread.Sleep(50);
+                }
+            }
         }
     }
 

@@ -38,6 +38,7 @@
         <PackageReference Include="System.Memory" Version="4.6.3" />
         <!-- Required for IAsyncEnumerable<T>, IAsyncDisposable, and IAsyncEnumerator<T> on netstandard2.0 -->
         <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.5" />
+        <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     </ItemGroup>
 
     <!-- End References -->

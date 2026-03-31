@@ -44,6 +44,9 @@ public class ConnectionString
 
         // setting values to properties
         Connection = _values.GetValue("connection", Connection);
+        
+        AESEncryption = _values.GetValue("encryption", AESEncryption);
+        
         Filename = _values.GetValue("filename", Filename).Trim();
 
         Password = _values.GetValue("password", Password);
@@ -66,6 +69,15 @@ public class ConnectionString
     /// "connection": Return how engine will be open (default: Direct)
     /// </summary>
     public ConnectionType Connection { get; set; } = ConnectionType.Direct;
+    
+    /// <summary>
+    /// "encryption": Return how AES encryption will be used (default: ECB).
+    /// Only for file-based databases. For in-memory databases, encryption is not supported and will be ignored if specified. If no password specified, encryption will not be used.
+    /// For file-based databases, if encryption is specified, the database file will be encrypted using AES encryption with the specified mode.
+    /// The password provided in the "password" attribute will be used to encrypt and decrypt the data pages.
+    /// If encryption is not specified, the database file will not be encrypted.              
+    /// </summary>
+    public AESEncryptionType AESEncryption { get; set; } = AESEncryptionType.ECB;
 
     /// <summary>
     /// "filename": Full path or relative path from DLL directory
@@ -121,7 +133,8 @@ public class ConnectionString
             ReadOnly = ReadOnly,
             Collation = Collation,
             Upgrade = Upgrade,
-            AutoRebuild = AutoRebuild
+            AutoRebuild = AutoRebuild,
+            AESEncryption = AESEncryption
         };
 
         engineSettingsAction?.Invoke(settings);

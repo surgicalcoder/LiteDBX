@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -10,12 +11,14 @@ namespace LiteDbX.Internals;
 
 public class Aes_Tests
 {
-    [Fact]
-    public void Encrypt_Decrypt_Stream()
+    [Theory]
+    [InlineData(AESEncryptionType.ECB)]
+    [InlineData(AESEncryptionType.GCM)]
+    public void Encrypt_Decrypt_Stream(AESEncryptionType encryptionType)
     {
         using (var media = new MemoryStream())
         {
-            using (var crypto = new AesStream("abc", media))
+            using (var crypto = CreateEncryptedStream("abc", media, encryptionType))
             {
                 var input0 = new byte[8192];
                 var input1 = new byte[8192];
@@ -41,9 +44,9 @@ public class Aes_Tests
 
                 // read encrypted data
                 media.Position = 0;
-                media.Read(output0, 0, 8192);
-                media.Read(output1, 0, 8192);
-                media.Read(output2, 0, 8192);
+                media.ReadExactly(output0, 0, 8192);
+                media.ReadExactly(output1, 0, 8192);
+                media.ReadExactly(output2, 0, 8192);
 
                 output0.All(x => x == 100).Should().BeFalse();
                 output1.All(x => x == 101).Should().BeFalse();
@@ -51,19 +54,46 @@ public class Aes_Tests
 
                 // read decrypted data
                 crypto.Position = 0 * 8192;
-                crypto.Read(output0, 0, 8192);
+                crypto.ReadExactly(output0, 0, 8192);
 
                 crypto.Position = 2 * 8192;
-                crypto.Read(output2, 0, 8192);
+                crypto.ReadExactly(output2, 0, 8192);
 
                 crypto.Position = 1 * 8192;
-                crypto.Read(output1, 0, 8192);
+                crypto.ReadExactly(output1, 0, 8192);
 
                 output0.All(x => x == 100).Should().BeTrue();
                 output1.All(x => x == 101).Should().BeTrue();
                 output2.All(x => x == 102).Should().BeTrue();
             }
         }
+    }
+
+    [Fact]
+    public void Encrypted_Stream_Factory_Prefers_Stored_Mode_On_Reopen()
+    {
+        byte[] persisted;
+        var input = Enumerable.Repeat((byte)123, 8192).ToArray();
+
+        using (var media = new MemoryStream())
+        {
+            using (var crypto = EncryptedStreamFactory.Open("abc", media, AESEncryptionType.GCM))
+            {
+                crypto.Write(input, 0, input.Length);
+                crypto.Flush();
+                persisted = media.ToArray();
+            }
+        }
+
+        using var reopenedMedia = new MemoryStream(persisted);
+        using var reopened = EncryptedStreamFactory.Open("abc", reopenedMedia, AESEncryptionType.ECB);
+
+        var output = new byte[8192];
+        reopened.ReadExactly(output, 0, output.Length);
+
+        output.Should().Equal(input);
+        reopened.Should().BeAssignableTo<IEncryptedStream>();
+        ((IEncryptedStream)reopened).EncryptionType.Should().Be(AESEncryptionType.GCM);
     }
 
     /// <summary>
@@ -136,14 +166,72 @@ public class Aes_Tests
 
                 // AesStream should fill bytes 32-64 with encrypted 1s
                 var checkBytes = new byte[32];
-                var cryptoReader = typeof(AesStream)
-                                   .GetField("_reader", BindingFlags.Instance | BindingFlags.NonPublic)
-                                   .GetValue(crypto) as CryptoStream;
+                var cryptoReaderField = typeof(AesStream)
+                                        .GetField("_reader", BindingFlags.Instance | BindingFlags.NonPublic);
+                var cryptoReader = cryptoReaderField?.GetValue(crypto) as CryptoStream;
+
+                cryptoReader.Should().NotBeNull();
 
                 memoryStream.Position = 32;
-                cryptoReader.Read(checkBytes, 0, checkBytes.Length);
+                cryptoReader!.ReadExactly(checkBytes, 0, checkBytes.Length);
                 Assert.All(checkBytes, b => Assert.Equal(1, b));
             }
         }
+    }
+
+    [Fact]
+    public void AesGcmStream_Invalid_Password()
+    {
+        byte[] persisted;
+
+        using (var memoryStream = new MemoryStream())
+        {
+            using (new AesGcmStream("password", memoryStream))
+            {
+                persisted = memoryStream.ToArray();
+            }
+        }
+
+        Action act = () =>
+        {
+            using var encrypted = new AesGcmStream("wrong-password", new MemoryStream(persisted));
+        };
+
+        act.Should().Throw<LiteException>();
+    }
+
+    [Fact]
+    public void AesGcmStream_Tampered_Page_Fails_On_Read()
+    {
+        byte[] persisted;
+        var input = Enumerable.Repeat((byte)7, 8192).ToArray();
+
+        using (var memoryStream = new MemoryStream())
+        {
+            using (var crypto = new AesGcmStream("password", memoryStream))
+            {
+                crypto.Write(input, 0, input.Length);
+                crypto.Flush();
+                persisted = memoryStream.ToArray();
+            }
+        }
+
+        persisted[8192 + 24] ^= 0x5A;
+
+        Action act = () =>
+        {
+            using var encrypted = new AesGcmStream("password", new MemoryStream(persisted));
+            var output = new byte[8192];
+            encrypted.ReadExactly(output, 0, output.Length);
+        };
+
+        act.Should().Throw<LiteException>();
+    }
+
+    private static Stream CreateEncryptedStream(string password, Stream stream, AESEncryptionType encryptionType)
+    {
+        return encryptionType == AESEncryptionType.GCM
+            ? new AesGcmStream(password, stream)
+            : new AesStream(password, stream);
     }
 }

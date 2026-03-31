@@ -24,7 +24,7 @@ namespace LiteDbX.Engine;
 /// still synchronous.  This is acceptable on shutdown/checkpoint paths but must not be called
 /// on hot async write paths without careful consideration.
 /// </summary>
-public class AesStream : Stream
+public class AesStream : Stream, IEncryptedStream
 {
     private static readonly byte[] _emptyContent = new byte[PAGE_SIZE - 1 - 16]; // 1 for aes indicator + 16 for salt
 
@@ -40,8 +40,13 @@ public class AesStream : Stream
     private readonly Stream _stream;
     private readonly CryptoStream _writer;
 
-    public AesStream(string password, Stream stream)
+    public AesStream(string password, Stream stream, AESEncryptionType aesEncryption = AESEncryptionType.ECB)
     {
+        if (aesEncryption == AESEncryptionType.GCM)
+        {
+            throw new NotSupportedException("Use AesGcmStream for AES-GCM encrypted streams.");
+        }
+
         _stream = stream;
         _name = _stream is FileStream fileStream ? Path.GetFileName(fileStream.Name) : null;
 
@@ -161,6 +166,8 @@ public class AesStream : Stream
     }
 
     public byte[] Salt { get; }
+
+    public AESEncryptionType EncryptionType => AESEncryptionType.ECB;
 
     public override bool CanRead => _stream.CanRead;
 

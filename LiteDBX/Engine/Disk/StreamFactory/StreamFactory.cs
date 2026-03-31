@@ -15,14 +15,16 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal class StreamFactory : IStreamFactory
 {
+    private readonly AESEncryptionType _aesEncryption;
     private readonly string _password;
     private readonly SemaphoreSlim _streamGate = new SemaphoreSlim(1, 1);
     private readonly Stream _stream;
 
-    public StreamFactory(Stream stream, string password)
+    public StreamFactory(Stream stream, string password, AESEncryptionType aesEncryption = AESEncryptionType.ECB)
     {
         _stream = stream;
         _password = password;
+        _aesEncryption = aesEncryption;
     }
 
     /// <summary>
@@ -40,7 +42,7 @@ internal class StreamFactory : IStreamFactory
             return new ConcurrentStream(_stream, canWrite, _streamGate);
         }
 
-        return new AesStream(_password, new ConcurrentStream(_stream, canWrite, _streamGate));
+        return EncryptedStreamFactory.Open(_password, new ConcurrentStream(_stream, canWrite, _streamGate), _aesEncryption);
     }
 
     /// <summary>
@@ -58,19 +60,7 @@ internal class StreamFactory : IStreamFactory
     /// </summary>
     public long GetLength()
     {
-        var length = _stream.Length;
-
-        // if file length are not PAGE_SIZE module, maybe last save are not completed saved on disk
-        // crop file removing last uncompleted page saved
-        if (length % PAGE_SIZE != 0)
-        {
-            length = length - length % PAGE_SIZE;
-
-            _stream.SetLength(length);
-            _stream.FlushToDisk();
-        }
-
-        return length > 0 ? length - (_password == null ? 0 : PAGE_SIZE) : 0;
+        return EncryptedStreamFactory.GetLogicalLength(_stream, _password);
     }
 
     /// <summary>

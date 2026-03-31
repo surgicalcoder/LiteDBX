@@ -145,7 +145,7 @@ internal class DiskService : IDisposable, IAsyncDisposable
 
         if (initialSize > 0)
         {
-            if (stream is AesStream)
+            if (stream is IEncryptedStream)
                 throw LiteException.InitialSizeCryptoNotSupported();
 
             if (initialSize % PAGE_SIZE != 0)

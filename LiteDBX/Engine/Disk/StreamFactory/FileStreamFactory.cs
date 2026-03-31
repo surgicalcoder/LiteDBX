@@ -13,7 +13,7 @@ namespace LiteDbX.Engine;
 /// <see cref="Stream.ReadAsync"/> / <see cref="Stream.WriteAsync"/> dispatch genuine OS-level
 /// async I/O (IOCP on Windows, io_uring / epoll on Linux) instead of blocking a thread-pool thread.
 /// </summary>
-internal class FileStreamFactory(string filename, string password, bool readOnly, bool hidden, bool useAesStream = true)
+internal class FileStreamFactory(string filename, string password, bool readOnly, bool hidden, bool useAesStream = true, AESEncryptionType aesEncryption = AESEncryptionType.ECB)
     : IStreamFactory
 {
     /// <summary>
@@ -53,7 +53,7 @@ internal class FileStreamFactory(string filename, string password, bool readOnly
             File.SetAttributes(filename, FileAttributes.Hidden);
         }
 
-        return password == null || !useAesStream ? stream : new AesStream(password, stream);
+        return password == null || !useAesStream ? stream : EncryptedStreamFactory.Open(password, stream, aesEncryption);
     }
 
     /// <summary>
@@ -78,30 +78,15 @@ internal class FileStreamFactory(string filename, string password, bool readOnly
             return 0;
         }
 
-        // get physical file length from OS
-        var length = new FileInfo(filename).Length;
+        using var fs = new FileStream(
+            filename,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite,
+            PAGE_SIZE,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        // if file length are not PAGE_SIZE module, maybe last save are not completed saved on disk
-        // crop file removing last uncompleted page saved
-        if (length % PAGE_SIZE != 0)
-        {
-            length = length - length % PAGE_SIZE;
-
-            using (var fs = new FileStream(
-                       filename,
-                       FileMode.Open,
-                       FileAccess.Write,
-                       FileShare.None,
-                       PAGE_SIZE,
-                       FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                fs.SetLength(length);
-                fs.FlushToDisk();
-            }
-        }
-
-        // if encrypted must remove salt first page (only if page contains data)
-        return length > 0 ? length - (password == null ? 0 : PAGE_SIZE) : 0;
+        return EncryptedStreamFactory.GetLogicalLength(fs, password);
     }
 
     /// <summary>
