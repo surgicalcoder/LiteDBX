@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\LiteDbX\LiteDbX.csproj" />
+        <ProjectReference Include="..\LiteDbX.Encryption.Gcm\LiteDbX.Encryption.Gcm.csproj" />
     </ItemGroup>
 
 </Project>

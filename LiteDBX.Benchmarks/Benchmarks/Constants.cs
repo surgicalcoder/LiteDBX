@@ -11,6 +11,7 @@ namespace LiteDbX.Benchmarks.Benchmarks
             internal const string INSERTION = nameof(INSERTION);
             internal const string DELETION = nameof(DELETION);
             internal const string SERIALIZATION = nameof(SERIALIZATION);
+            internal const string WAL = nameof(WAL);
         }
     }
 }
