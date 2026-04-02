@@ -13,8 +13,8 @@ public class ThreadSafety_LockFileMode_Tests
     {
         using var file = new TempFile();
 
-        await using var first = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
-        await using var second = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+        await using var first = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+        await using var second = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
 
         first.Timeout = TimeSpan.FromSeconds(5);
         second.Timeout = TimeSpan.FromSeconds(5);
@@ -45,7 +45,7 @@ public class ThreadSafety_LockFileMode_Tests
         var tasks = Enumerable.Range(0, 4)
             .Select(worker => ConcurrencyTestHelper.RunIsolated(async () =>
             {
-                await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+                await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
                 db.Timeout = TimeSpan.FromSeconds(5);
                 var col = db.GetCollection("items");
 
@@ -62,7 +62,7 @@ public class ThreadSafety_LockFileMode_Tests
 
         await Task.WhenAll(tasks);
 
-        await using var verify = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+        await using var verify = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
         var rows = await verify.GetCollection("items").FindAll().ToListAsync();
         rows.Should().HaveCount(20);
         rows.Select(x => x["_id"].AsInt32).Distinct().Should().HaveCount(20);
@@ -75,21 +75,21 @@ public class ThreadSafety_LockFileMode_Tests
 
         var readerTask = ConcurrencyTestHelper.RunIsolated(async () =>
         {
-            await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+            await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
             db.Timeout = TimeSpan.FromSeconds(5);
             return await db.GetCollection("items").Count();
         });
 
         var writerTask = ConcurrencyTestHelper.RunIsolated(async () =>
         {
-            await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+            await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
             db.Timeout = TimeSpan.FromSeconds(5);
             await db.GetCollection("items").Insert(new BsonDocument { ["_id"] = 1 });
         });
 
         await Task.WhenAll(readerTask, writerTask);
 
-        await using var verify = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
+        await using var verify = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.LockFile));
         (await verify.GetCollection("items").Count()).Should().Be(1);
     }
 }

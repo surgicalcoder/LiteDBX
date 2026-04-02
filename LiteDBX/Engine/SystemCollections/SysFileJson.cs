@@ -2,6 +2,7 @@
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace LiteDbX.Engine;
 
@@ -9,7 +10,10 @@ internal class SysFileJson : SystemCollection
 {
     public SysFileJson() : base("$file_json") { }
 
-    public override IEnumerable<BsonDocument> Input(BsonValue options)
+    public override IAsyncEnumerable<BsonDocument> Input(BsonValue options, CancellationToken cancellationToken = default)
+        => ToAsyncEnumerable(ReadDocuments(options), cancellationToken);
+
+    private IEnumerable<BsonDocument> ReadDocuments(BsonValue options)
     {
         var filename = GetOption(options, "filename")?.AsString ?? throw new LiteException(0, $"Collection ${Name} requires string as 'filename' or a document field 'filename'");
         var encoding = GetOption(options, "encoding", "utf-8").AsString;

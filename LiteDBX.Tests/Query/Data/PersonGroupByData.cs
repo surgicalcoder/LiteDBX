@@ -25,7 +25,7 @@ public class PersonGroupByData : IAsyncDisposable
     public static async ValueTask<PersonGroupByData> CreateAsync()
     {
         var local = DataGen.Person(1, 1000).ToArray();
-        var db = new LiteDatabase(new MemoryStream());
+        var db = await LiteDatabase.Open(new MemoryStream());
         var collection = db.GetCollection<Person>();
         await collection.Insert(local);
         await collection.EnsureIndex(x => x.Age);

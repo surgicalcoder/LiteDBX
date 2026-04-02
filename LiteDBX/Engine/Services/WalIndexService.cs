@@ -20,8 +20,9 @@ namespace LiteDbX.Engine;
 ///   <item><see cref="ConfirmTransaction"/> acquires the index write lock asynchronously.</item>
 ///   <item><see cref="GetPageIndex"/> keeps a sync bridge entry via
 ///     <see cref="AsyncReaderWriterLock.EnterReadSync"/> for the Phase 4 QueryExecutor path.</item>
-///   <item><see cref="Clear"/> and <see cref="RestoreIndex"/> keep their sync signatures (called
-///     from the sync engine startup path); async versions are provided for Phase 8.</item>
+///   <item><see cref="Clear"/> and the <c>ref</c>-based <see cref="RestoreIndex(ref HeaderPage)"/>
+///     remain sync bridges for constructor-based startup; the explicit async-open lifecycle uses
+///     <see cref="RestoreIndex(HeaderPage, CancellationToken)"/>.</item>
 /// </list>
 /// </summary>
 internal class WalIndexService
@@ -222,9 +223,60 @@ internal class WalIndexService
     // -- RestoreIndex (sync, startup bridge) ----------------------------------
 
     /// <summary>
+    /// Load all confirmed transactions from the log file during explicit async engine startup.
+    /// Uses <see cref="DiskService.ReadFullAsync"/> and async index updates.
+    /// </summary>
+    public async ValueTask<HeaderPage> RestoreIndex(HeaderPage header, CancellationToken cancellationToken = default)
+    {
+        var positions = new Dictionary<long, List<PagePosition>>();
+        var current = 0L;
+
+        await foreach (var buffer in _disk.ReadFullAsync(FileOrigin.Log, cancellationToken).ConfigureAwait(false))
+        {
+            if (buffer.IsBlank())
+            {
+                current += PAGE_SIZE;
+                continue;
+            }
+
+            var pageID = buffer.ReadUInt32(BasePage.P_PAGE_ID);
+            var isConfirmed = buffer.ReadBool(BasePage.P_IS_CONFIRMED);
+            var transactionID = buffer.ReadUInt32(BasePage.P_TRANSACTION_ID);
+
+            var position = new PagePosition(pageID, current);
+
+            if (positions.TryGetValue(transactionID, out var list))
+                list.Add(position);
+            else
+                positions[transactionID] = new List<PagePosition> { position };
+
+            if (isConfirmed)
+            {
+                await ConfirmTransactionAsync(transactionID, positions[transactionID], cancellationToken).ConfigureAwait(false);
+
+                var pageType = (PageType)buffer.ReadByte(BasePage.P_PAGE_TYPE);
+
+                if (pageType == PageType.Header)
+                {
+                    var headerBuffer = header.Buffer;
+                    Buffer.BlockCopy(buffer.Array, buffer.Offset, headerBuffer.Array, headerBuffer.Offset, PAGE_SIZE);
+                    header = new HeaderPage(headerBuffer);
+                    header.TransactionID = uint.MaxValue;
+                    header.IsConfirmed = false;
+                }
+            }
+
+            _lastTransactionID = (int)transactionID;
+            current += PAGE_SIZE;
+        }
+
+        return header;
+    }
+
+    /// <summary>
     /// Load all confirmed transactions from the log file (called during engine startup).
-    /// Uses the sync <see cref="DiskService.ReadFull"/> path because the engine lifecycle is not
-    /// yet async at this point. Phase 8 (lifecycle) will convert this to an async open path.
+    /// Uses the sync <see cref="DiskService.ReadFull"/> path only for the legacy constructor-based
+    /// startup bridge. Prefer <see cref="RestoreIndex(HeaderPage, CancellationToken)"/>.
     /// </summary>
     public void RestoreIndex(ref HeaderPage header)
     {

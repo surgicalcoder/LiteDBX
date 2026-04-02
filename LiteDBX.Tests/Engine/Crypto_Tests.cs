@@ -17,7 +17,7 @@ public class Crypto_Tests
         var log = new MemoryStream();
         var settings = new EngineSettings { DataStream = data, LogStream = log };
 
-        await using (var e = new LiteEngine(settings))
+        await using (var e = await LiteEngine.Open(settings))
         {
             await CreateDatabase(e);
 
@@ -35,7 +35,7 @@ public class Crypto_Tests
         var log = new MemoryStream();
         var settings = new EngineSettings { DataStream = data, LogStream = log, Password = "abc", AESEncryption = AESEncryptionType.ECB };
 
-        using (var e = new LiteEngine(settings))
+        await using (var e = await LiteEngine.Open(settings))
         {
             await CreateDatabase(e);
 
@@ -54,14 +54,14 @@ public class Crypto_Tests
     }
 
     [Fact]
-    public void Crypto_Datafile_Gcm_Without_Provider_Throws()
+    public async Task Crypto_Datafile_Gcm_Without_Provider_Throws()
     {
         var data = new MemoryStream();
         var log = new MemoryStream();
 
-        System.Action act = () =>
+        Func<Task> act = async () =>
         {
-            _ = new LiteEngine(new EngineSettings
+            _ = await LiteEngine.Open(new EngineSettings
             {
                 DataStream = data,
                 LogStream = log,
@@ -70,7 +70,7 @@ public class Crypto_Tests
             });
         };
 
-        act.Should().Throw<LiteException>()
+        (await act.Should().ThrowAsync<LiteException>())
             .Where(x => x.ErrorCode == LiteException.ENCRYPTION_PROVIDER_NOT_REGISTERED);
     }
 

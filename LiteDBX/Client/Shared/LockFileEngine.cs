@@ -9,15 +9,25 @@ using LiteDbX.Engine;
 namespace LiteDbX;
 
 /// <summary>
-/// Cross-process engine wrapper that coordinates write operations through an exclusive
-/// lock file and keeps the underlying <see cref="LiteEngine"/> open only for the
-/// duration of each outermost call.
+/// Supported shared-access mode for <b>physical file-backed</b> databases that need
+/// cross-process write coordination.
 ///
-/// Reads use a short-lived engine as well, so writer handles are not kept open between
-/// calls. Nested operations in the same async flow reuse the same engine lease.
-/// Explicit multi-call transactions remain unsupported for the same reason as
-/// <see cref="SharedEngine"/>: there is no durable ambient engine scope across arbitrary
-/// user code.
+/// <para>
+/// <see cref="LockFileEngine"/> coordinates write operations through an exclusive lock file and
+/// keeps the underlying <see cref="LiteEngine"/> open only for the duration of each outermost
+/// call. Reads also use short-lived leases, so handles are not kept open between operations.
+/// Nested operations in the same async flow reuse the same engine lease.
+/// </para>
+///
+/// <para>
+/// This mode is limited to physical filename-based databases. It does not support custom streams,
+/// <c>:memory:</c>, or <c>:temp:</c>.
+/// </para>
+///
+/// <para>
+/// Explicit transaction scopes are not supported. Use direct mode when you need
+/// <see cref="ILiteTransaction"/> scope.
+/// </para>
 /// </summary>
 public class LockFileEngine : ILiteEngine, IDisposable
 {
@@ -99,7 +109,7 @@ public class LockFileEngine : ILiteEngine, IDisposable
         if (!SupportsLockFile(settings))
         {
             throw new NotSupportedException(
-                "ConnectionType.LockFile requires a physical Filename and does not support custom streams, ':memory:' or ':temp:'.");
+                "ConnectionType.LockFile is supported only for physical file-backed databases and does not support custom streams, ':memory:', or ':temp:'.");
         }
     }
 
@@ -253,14 +263,17 @@ public class LockFileEngine : ILiteEngine, IDisposable
                 lockStream = await AcquireWriteLockAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            var engine = await LiteEngine.Open(CreateOperationSettings(requiresWriteAccess), cancellationToken).ConfigureAwait(false);
+
             lock (_syncRoot)
             {
                 if (_disposed || _disposeRequested)
                 {
+                    engine.Dispose();
+                    lockStream?.Dispose();
                     throw new ObjectDisposedException(nameof(LockFileEngine));
                 }
 
-                var engine = new LiteEngine(CreateOperationSettings(requiresWriteAccess));
                 var session = new SharedSession { RefCount = 1, HasWriteAccess = requiresWriteAccess };
                 var context = new LeaseContext(this, session, ambient);
 
@@ -424,8 +437,8 @@ public class LockFileEngine : ILiteEngine, IDisposable
 
     public ValueTask<ILiteTransaction> BeginTransaction(CancellationToken cancellationToken = default)
         => throw new NotSupportedException(
-            "Explicit transactions are not supported in LockFileEngine. " +
-            "Use nested single-call operations, or use a dedicated LiteEngine instance for transaction scope.");
+            "ConnectionType.LockFile supports physical-file cross-process coordination only. " +
+            "Explicit transactions are not supported; use ConnectionType.Direct for ILiteTransaction scope.");
 
     public IAsyncEnumerable<BsonDocument> Query(
         string collection,
@@ -444,8 +457,8 @@ public class LockFileEngine : ILiteEngine, IDisposable
         if (transaction != null)
         {
             throw new NotSupportedException(
-                "Explicit transaction-bound queries are not supported in LockFileEngine. " +
-                "Use a dedicated LiteEngine/LiteDatabase instance for transaction scope.");
+                "ConnectionType.LockFile does not support explicit transaction-bound queries. " +
+                "Use ConnectionType.Direct for ILiteTransaction scope.");
         }
 
         return Query(collection, query, cancellationToken);
@@ -483,8 +496,8 @@ public class LockFileEngine : ILiteEngine, IDisposable
         if (transaction != null)
         {
             throw new NotSupportedException(
-                "Explicit transaction-bound inserts are not supported in LockFileEngine. " +
-                "Use a dedicated LiteEngine/LiteDatabase instance for transaction scope.");
+                "ConnectionType.LockFile does not support explicit transaction-bound inserts. " +
+                "Use ConnectionType.Direct for ILiteTransaction scope.");
         }
 
         return Insert(collection, docs, autoId, cancellationToken);

@@ -11,7 +11,7 @@ public class Pull2468_Tests
     [Fact]
     public async Task Supports_LowerInvariant()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
         await collection.Insert(new TestType
@@ -38,7 +38,7 @@ public class Pull2468_Tests
     [Fact]
     public async Task Supports_UpperInvariant()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
         await collection.Insert(new TestType

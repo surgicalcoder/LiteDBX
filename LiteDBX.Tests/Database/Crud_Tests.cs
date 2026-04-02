@@ -11,7 +11,7 @@ public class Crud_Tests
     [Fact]
     public async Task Insert_With_AutoId()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var users = db.GetCollection<User>("users");
 
         var u1 = new User { Name = "John" };
@@ -41,7 +41,7 @@ public class Crud_Tests
     [Fact]
     public async Task Delete_Many()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var users = db.GetCollection<User>("users");
 
         var u1 = new User { Id = 1, Name = "John" };

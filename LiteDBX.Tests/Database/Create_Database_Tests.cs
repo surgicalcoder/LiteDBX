@@ -14,7 +14,7 @@ public class Create_Database_Tests
         //var minimal = 8192 * 5; // 1 header + 1 collection + 1 data + 1 index = 4 pages minimal
 
         using var file = new TempFile();
-        await using var db = new LiteDatabase("filename=" + file.Filename + ";initial size=" + initial);
+        await using var db = await LiteDatabase.Open("filename=" + file.Filename + ";initial size=" + initial);
         var col = db.GetCollection("col");
 
         // just ensure open datafile

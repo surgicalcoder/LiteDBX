@@ -42,7 +42,7 @@ public class DbRef_Include_Tests
         mapper.Entity<Product>()
               .DbRef(x => x.SupplierAddress, "addresses");
 
-        await using var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream(), mapper, new MemoryStream());
 
         var address = new Address { StreetName = "3600 S Las Vegas Blvd" };
         var customer = new Customer { Name = "John Doe", MainAddress = address };

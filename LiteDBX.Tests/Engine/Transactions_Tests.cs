@@ -61,7 +61,7 @@ public class Transactions_Tests
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        await using var db = new LiteDatabase("filename=:memory:");
+        await using var db = await LiteDatabase.Open("filename=:memory:");
         db.Timeout = TimeSpan.FromSeconds(1);
 
         var person = db.GetCollection<Person>();
@@ -115,7 +115,7 @@ public class Transactions_Tests
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var person = db.GetCollection<Person>();
         await person.Insert(data1);
 
@@ -173,7 +173,7 @@ public class Transactions_Tests
         var data1 = DataGen.Person(1, 100).ToArray();
         var data2 = DataGen.Person(101, 200).ToArray();
 
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var person = db.GetCollection<Person>();
         await person.Insert(data1);
 
@@ -231,7 +231,7 @@ public class Transactions_Tests
         var data0 = DataGen.Person(1, 10).ToArray();
         var data1 = DataGen.Person(11, 20).ToArray();
 
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var person = db.GetCollection<Person>();
 
         // explicit transaction commit
@@ -253,7 +253,7 @@ public class Transactions_Tests
     [Fact]
     public async Task Test_Transaction_Rollback_On_Dispose()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col = db.GetCollection<Person>();
 
         await using (var tx = await db.BeginTransaction())
@@ -268,7 +268,7 @@ public class Transactions_Tests
     [Fact]
     public async Task Transaction_RollbackAsync_Ignores_Readable_Safepoint_Buffers()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_async", "idx_async");
 
         try
@@ -285,7 +285,7 @@ public class Transactions_Tests
     [Fact]
     public async Task Transaction_Rollback_Ignores_Readable_Safepoint_Buffers()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_sync", "idx_sync");
 
         try
@@ -302,7 +302,7 @@ public class Transactions_Tests
     [Fact]
     public async Task Transaction_Dispose_Ignores_Readable_Safepoint_Buffers()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var (transaction, service) = await CreateTransactionWithReadableDirtyCollectionPage(db, "rollback_dispose", "idx_dispose");
 
         try

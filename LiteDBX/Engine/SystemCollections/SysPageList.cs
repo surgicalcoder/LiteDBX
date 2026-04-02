@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using static LiteDbX.Constants;
 
 namespace LiteDbX.Engine;
@@ -9,7 +10,7 @@ internal class SysPageList(HeaderPage header, TransactionMonitor monitor)
 {
     private Dictionary<uint, string> _collections;
 
-    public override IEnumerable<BsonDocument> Input(BsonValue options)
+    public override IAsyncEnumerable<BsonDocument> Input(BsonValue options, CancellationToken cancellationToken = default)
     {
         var pageID = GetOption(options, "pageID");
 
@@ -21,10 +22,7 @@ internal class SysPageList(HeaderPage header, TransactionMonitor monitor)
 
         var result = pageID != null ? GetList((uint)pageID.AsInt32, null, transaction, snapshot) : GetAllList(transaction, snapshot);
 
-        foreach (var page in result)
-        {
-            yield return page;
-        }
+        return ToAsyncEnumerable(result, cancellationToken);
     }
 
     private IEnumerable<BsonDocument> GetAllList(TransactionService transaction, Snapshot snapshot)

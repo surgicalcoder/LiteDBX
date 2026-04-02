@@ -14,7 +14,7 @@ public class ThreadSafety_TransactionLifecycle_Tests
     [Fact]
     public async Task No_Leaked_Transactions_After_Parallel_Commits()
     {
-        await using var engine = new LiteEngine(new EngineSettings { DataStream = new MemoryStream() });
+        await using var engine = await LiteEngine.Open(new EngineSettings { DataStream = new MemoryStream() });
         await using var db = new LiteDatabase(engine, disposeOnClose: false);
         var monitor = engine.GetMonitor();
         var col = db.GetCollection("items");
@@ -44,7 +44,7 @@ public class ThreadSafety_TransactionLifecycle_Tests
     [Fact]
     public async Task No_Leaked_Transactions_After_Parallel_Rollback_Dispose_Mix()
     {
-        await using var engine = new LiteEngine(new EngineSettings { DataStream = new MemoryStream() });
+        await using var engine = await LiteEngine.Open(new EngineSettings { DataStream = new MemoryStream() });
         await using var db = new LiteDatabase(engine, disposeOnClose: false);
         var monitor = engine.GetMonitor();
         var col = db.GetCollection("items");
@@ -91,7 +91,7 @@ public class ThreadSafety_TransactionLifecycle_Tests
     [Fact]
     public async Task System_Collections_Report_Active_Transactions_And_Snapshots_Then_Clear()
     {
-        await using var engine = new LiteEngine(new EngineSettings { DataStream = new MemoryStream() });
+        await using var engine = await LiteEngine.Open(new EngineSettings { DataStream = new MemoryStream() });
         await using var db = new LiteDatabase(engine, disposeOnClose: false);
         var monitor = engine.GetMonitor();
         var col = db.GetCollection<Person>("people");

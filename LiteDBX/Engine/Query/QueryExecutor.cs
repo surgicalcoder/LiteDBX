@@ -35,8 +35,21 @@ internal class QueryExecutor
     private readonly EnginePragmas _pragmas;
     private readonly Query _query;
     private readonly SortDisk _sortDisk;
-    private readonly IEnumerable<BsonDocument> _source;
+    private readonly Func<CancellationToken, ValueTask<IEnumerable<BsonDocument>>> _sourceFactory;
     private readonly EngineState _state;
+
+    internal static QueryExecutor Create(
+        LiteEngine engine,
+        EngineState state,
+        TransactionMonitor monitor,
+        SortDisk sortDisk,
+        DiskService disk,
+        EnginePragmas pragmas,
+        string collection,
+        Query query,
+        Func<CancellationToken, ValueTask<IEnumerable<BsonDocument>>> sourceFactory,
+        TransactionService transaction = null)
+        => new QueryExecutor(engine, state, monitor, sortDisk, disk, pragmas, collection, query, sourceFactory, transaction);
 
     public QueryExecutor(
         LiteEngine engine,
@@ -47,7 +60,7 @@ internal class QueryExecutor
         EnginePragmas pragmas,
         string collection,
         Query query,
-        IEnumerable<BsonDocument> source,
+        Func<CancellationToken, ValueTask<IEnumerable<BsonDocument>>> sourceFactory,
         TransactionService transaction = null)
     {
         _engine = engine;
@@ -59,7 +72,7 @@ internal class QueryExecutor
         _collection = collection;
         _query = query;
         _cursor = new CursorInfo(collection, query);
-        _source = source;
+        _sourceFactory = sourceFactory;
         BoundTransaction = transaction;
 
         LOG(_query.ToSQL(_collection).Replace(Environment.NewLine, " "), "QUERY");
@@ -120,7 +133,9 @@ internal class QueryExecutor
 
         transaction.OpenCursors.Add(_cursor);
 
-        using var docs = RunQuery(transaction, executionPlan).GetEnumerator();
+        var source = await MaterializeSourceAsync(cancellationToken).ConfigureAwait(false);
+
+        using var docs = RunQuery(transaction, source, executionPlan).GetEnumerator();
 
         try
         {
@@ -161,6 +176,16 @@ internal class QueryExecutor
                 _monitor.ReleaseTransaction(transaction);
             }
         }
+    }
+
+    private async ValueTask<IEnumerable<BsonDocument>> MaterializeSourceAsync(CancellationToken cancellationToken)
+    {
+        if (_sourceFactory == null)
+        {
+            return null;
+        }
+
+        return await _sourceFactory(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -204,7 +229,10 @@ internal class QueryExecutor
     // ── Synchronous CPU pipeline ───────────────────────────────────────────────
     // All steps below are pure in-memory transforms over the page cache; no I/O occurs here.
 
-    private IEnumerable<BsonDocument> RunQuery(TransactionService transaction, bool executionPlan)
+    private IEnumerable<BsonDocument> RunQuery(
+        TransactionService transaction,
+        IEnumerable<BsonDocument> source,
+        bool executionPlan)
     {
         var snapshot = transaction.CreateSnapshot(
             _query.ForUpdate ? LockMode.Write : LockMode.Read,
@@ -212,7 +240,7 @@ internal class QueryExecutor
             false);
 
         // no collection and no external source — handle SELECT without FROM
-        if (snapshot.CollectionPage == null && _source == null)
+        if (snapshot.CollectionPage == null && source == null)
         {
             if (_query.Select.UseSource)
             {
@@ -222,7 +250,7 @@ internal class QueryExecutor
             yield break;
         }
 
-        var optimizer = new QueryOptimization(snapshot, _query, _source, _pragmas.Collation);
+        var optimizer = new QueryOptimization(snapshot, _query, source, _pragmas.Collation);
         var queryPlan = optimizer.ProcessQuery();
 
         if (executionPlan)

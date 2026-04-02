@@ -26,9 +26,9 @@ public class WalEncryptionVariantBenchmark : WalBenchmarkBase
     }
 
     [IterationSetup]
-    public void IterationSetup()
+    public async Task IterationSetup()
     {
-        OpenDatabaseAsync(EncryptionMode, checkpointSize: 0).GetAwaiter().GetResult();
+        await OpenDatabaseAsync(EncryptionMode, checkpointSize: 0);
         _collection = GetCollection();
     }
 
@@ -42,10 +42,10 @@ public class WalEncryptionVariantBenchmark : WalBenchmarkBase
     }
 
     [IterationCleanup]
-    public void IterationCleanup()
+    public async Task IterationCleanup()
     {
         _collection = null;
-        CloseDatabaseAsync().GetAwaiter().GetResult();
+        await CloseDatabaseAsync();
     }
 }
 

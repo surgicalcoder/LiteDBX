@@ -10,7 +10,7 @@ public class Issue2265_Tests
     [Fact]
     public async Task Test()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var c = db.GetCollection<Weights>("weights");
         var w = await c.FindOne(x => true);
 

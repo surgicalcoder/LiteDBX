@@ -20,7 +20,7 @@ public class Issue2417_Tests
 
             try
             {
-                using (var db = new LiteEngine(settings))
+                await using (var db = await LiteEngine.Open(settings))
                 {
                     var col = await db.Query("customers", Query.All()).ToListAsync();
                     Assert.Fail("not expected");
@@ -31,7 +31,7 @@ public class Issue2417_Tests
                 Assert.True(ex is LiteException lex && lex.ErrorCode == 999);
             }
 
-            using (var db = new LiteEngine(settings))
+            await using (var db = await LiteEngine.Open(settings))
             {
                 var col = (await db.Query("customers", Query.All()).ToListAsync()).Count;
                 var errors = (await db.Query("_rebuild_errors", Query.All()).ToListAsync()).Count;
@@ -58,7 +58,7 @@ public class Issue2417_Tests
 
             try
             {
-                using (var db = new LiteEngine(settings))
+                await using (var db = await LiteEngine.Open(settings))
                 {
                     var col = await db.Query("hubData$AppOperations", Query.All()).ToListAsync();
                     Assert.Fail("not expected");
@@ -69,7 +69,7 @@ public class Issue2417_Tests
                 Assert.True(ex is LiteException lex && lex.ErrorCode == 999);
             }
 
-            using (var db = new LiteEngine(settings))
+            await using (var db = await LiteEngine.Open(settings))
             {
                 var col = (await db.Query("hubData$AppOperations", Query.All()).ToListAsync()).Count;
                 var errors = (await db.Query("_rebuild_errors", Query.All()).ToListAsync()).Count;

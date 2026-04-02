@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Stress;
 
@@ -15,6 +16,6 @@ public class ThreadInfo
     public long ResultSum { get; set; }
     public TimeSpan TotalRun { get; set; } = TimeSpan.Zero;
     public Exception Exception { get; set; }
-    public Thread Thread { get; set; }
+    public Task WorkerTask { get; set; }
     public CancellationTokenSource CancellationTokenSource { get; } = new();
 }

@@ -17,7 +17,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
         public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-            DatabaseInstance = new LiteDatabase(ConnectionString());
+            DatabaseInstance = await LiteDatabase.Open(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
             await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));
         }
@@ -26,7 +26,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.Queries
         public async Task GlobalIndexSetup()
         {
             File.Delete(DatabasePath);
-            DatabaseInstance = new LiteDatabase(ConnectionString());
+            DatabaseInstance = await LiteDatabase.Open(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
             await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.IsFavorite);
             await _fileMetaCollection.Insert(FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize));

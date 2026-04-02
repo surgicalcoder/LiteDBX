@@ -11,7 +11,7 @@ public class Database_Pragmas_Tests
     [Fact]
     public async Task Database_Pragmas_Get_Set()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
 
         db.Timeout.TotalSeconds.Should().Be(60.0);
         db.UtcDate.Should().Be(false);

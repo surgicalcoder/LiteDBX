@@ -9,8 +9,8 @@ public partial class LiteEngine
     /// Rebuild the database fully asynchronously.
     ///
     /// Phase 6: uses <see cref="CloseAsync"/> and <see cref="RebuildService.RebuildAsync"/>
-    /// so no thread is blocked during the rebuild I/O. <c>Open()</c> after the rebuild
-    /// still runs synchronously (constructor limitation, deferred to Phase 7 async factory).
+    /// so no thread is blocked during the rebuild I/O. Re-opening after the rebuild now
+    /// uses the explicit async-native startup lifecycle via <c>LiteEngine.Open(...)</c> internals.
     /// </summary>
     public async ValueTask<long> Rebuild(RebuildOptions options, CancellationToken cancellationToken = default)
     {
@@ -24,9 +24,7 @@ public partial class LiteEngine
         var rebuilder = new RebuildService(_settings);
         var diff = await rebuilder.RebuildAsync(options, cancellationToken).ConfigureAwait(false);
 
-        // Phase 6 deferred: Open() remains synchronous (called from constructor).
-        // A static OpenAsync() factory will allow this to be fully async in Phase 7.
-        Open();
+        await OpenInstance(cancellationToken).ConfigureAwait(false);
         _state.Disposed = false;
 
         return diff;
@@ -109,10 +107,9 @@ public partial class LiteEngine
     /// <see cref="RebuildService.Rebuild"/> which is called from the synchronous
     /// <c>Recovery()</c> → <c>Open()</c> constructor path.
     ///
-    /// Phase 6 deferred: still uses <c>GetOrCreateTransactionSync</c> and
-    /// <c>EnsureIndex(...).GetAwaiter().GetResult()</c> because this code runs
-    /// inside the synchronous constructor. Resolving this requires the async factory
-    /// (Phase 7).
+    /// This legacy compatibility path still uses <c>GetOrCreateTransactionSync</c> and
+    /// <c>EnsureIndex(...).GetAwaiter().GetResult()</c> because it runs inside the
+    /// synchronous constructor/startup bridge.
     ///
     /// Do not call this method from any non-constructor site.
     /// </summary>

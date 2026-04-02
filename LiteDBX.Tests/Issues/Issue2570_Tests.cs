@@ -9,7 +9,7 @@ public class Issue2570_Tests
     [Fact]
     public async Task Issue2570_Tuples()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Person>("Person");
 
         await col.Insert(new Person { Name = ("John", "Doe") });
@@ -25,7 +25,7 @@ public class Issue2570_Tests
     [Fact]
     public async Task Issue2570_Structs()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<PersonWithStruct>("Person");
 
         await col.Insert(new PersonWithStruct { Name = new PersonData { FirstName = "John", LastName = "Doe" } });

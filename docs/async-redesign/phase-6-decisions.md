@@ -9,7 +9,7 @@ system collections with sync assumptions, and utility helpers that blocked threa
 
 ## 1. SharedEngine
 
-**Decision: Redesigned (in-process) / Cross-process deferred**
+**Decision: Supported in-process mode / Cross-process out of scope**
 
 ### What changed
 
@@ -27,14 +27,33 @@ system collections with sync assumptions, and utility helpers that blocked threa
   disposal when there is no active shared session.
 - `BeginTransaction` continues to throw `NotSupportedException` with an updated message.
 
+### Final support statement
+
+- `SharedEngine` is a supported async-safe mode for <b>in-process serialized access only</b>.
+- It supports nested single-call operations in the same async flow.
+- It does <b>not</b> provide cross-process coordination.
+- It does <b>not</b> support explicit `ILiteTransaction` scope or transaction-bound operations.
+- Consumers that need transaction scope should use direct mode.
+
 ### What is deferred
 
-- **Cross-process exclusive file coordination** (the original named-mutex purpose) is
-  explicitly deferred. No hidden sync fallback exists. A future phase may introduce
-  async-safe cross-process coordination (e.g. polling file-lock with `Task.Delay` retries).
-- **Explicit transaction scope** is still deferred; the reentrant lease model supports nested
-  single-call operations and streamed enumeration, but it does not expose explicit transaction
-  scope across arbitrary user code.
+- No additional runtime work is planned for this milestone beyond documenting the boundary clearly.
+- Any future cross-process shared-mode design would be a separate feature, not an implied guarantee.
+
+---
+
+## 1a. LockFileEngine
+
+**Decision: Supported limited cross-process mode**
+
+### Final support statement
+
+- `LockFileEngine` is a supported mode for <b>physical file-backed databases</b> that need
+  cross-process write coordination.
+- It uses short-lived per-call leases around an inner `LiteEngine` and an exclusive lock file.
+- It does <b>not</b> support custom streams, `:memory:`, or `:temp:`.
+- It does <b>not</b> support explicit `ILiteTransaction` scope or transaction-bound operations.
+- Consumers that need transaction scope should use direct mode.
 
 ---
 
@@ -88,8 +107,8 @@ Only the Phase 6 status comment was updated.
 
 ### What is deferred
 
-- The `Rebuild()` sync overload still uses `GetAwaiter().GetResult()` on the constructor
-  path. This is resolved once Phase 7 introduces `LiteEngine.OpenAsync()` (async factory).
+- The `Rebuild()` sync overload still uses `GetAwaiter().GetResult()` on the legacy constructor
+  path only.
 
 ---
 
@@ -109,48 +128,52 @@ Only the Phase 6 status comment was updated.
 
 ### What is deferred
 
-- `Open()` after `Rebuild` is still synchronous (constructor limitation).
 - `RebuildContent` sync path still uses `GetOrCreateTransactionSync` and
-  `EnsureIndex(...).GetAwaiter().GetResult()` — resolved with Phase 7 async factory.
+  `EnsureIndex(...).GetAwaiter().GetResult()` — resolved in the remaining startup/recovery
+  bridge-removal workstream for the legacy constructor path.
 
 ---
 
 ## 6. Recovery.cs
 
-**Decision: Documented deferral**
+**Decision: Primary path migrated; legacy constructor bridge retained**
 
-`Recovery()` is called synchronously from `Open()` (constructor), so it cannot be made
-async without a static `OpenAsync()` factory. Updated documentation explains this clearly.
-The method correctly delegates to the internal sync `RebuildService.Rebuild()` overload.
+The explicit `LiteEngine.Open(...)` lifecycle now awaits async recovery via
+`RebuildService.RebuildAsync()`. A separate sync `Recovery()` overload is retained only for the
+legacy constructor-based startup bridge.
 
 ---
 
 ## 7. Upgrade.cs — TryUpgrade
 
-**Decision: Documented deferral**
+**Decision: Primary path migrated; legacy constructor bridge retained**
 
-`TryUpgrade()` runs synchronously during `Open()` (constructor path). The file detection
-read and the `Recovery()` call both block the calling thread. Updated documentation
-explains the deferral. No functional change needed — the sync file read for version
-detection is acceptable for a startup one-shot check.
+The explicit `LiteEngine.Open(...)` lifecycle now performs upgrade detection with async file I/O
+and awaits recovery when needed. A separate sync `TryUpgrade()` overload is retained only for the
+legacy constructor-based startup bridge.
 
 ---
 
-## 8. SysQuery (`$query`)
+## 8. System collections and SysQuery (`$query`)
 
-**Decision: Explicitly disabled**
+**Decision: Async input contract added; `$query` re-enabled**
 
-`SysQuery.Input()` now throws `NotSupportedException` with a clear explanation.
+`SystemCollection.Input(...)` now returns `IAsyncEnumerable<BsonDocument>`.
 
-**Reason:** `SqlParser.Execute()` returns `ValueTask<IBsonDataReader>` and
-`IBsonDataReader.Read()` returns `ValueTask<bool>`, but `SystemCollection.Input()`
-must return `IEnumerable<BsonDocument>`. Driving an async reader from a sync
-`IEnumerable` producer would require `GetAwaiter().GetResult()` inside a `yield return`
-loop — which is not possible in a `yield`-based iterator and would be wrong anyway.
+### What changed
 
-**Deferred to Phase 7:** Migrate `SystemCollection.Input()` to return
-`IAsyncEnumerable<BsonDocument>` and update all callers in the query pipeline, then
-re-enable `$query`.
+- `SystemCollection.Input(...)` is now async-compatible.
+- `LiteEngine.Query(...)` defers system-source materialization until after the query transaction
+  is established, then buffers the system source once before the synchronous CPU pipeline begins.
+- Existing synchronous system collections (`$dump`, `$page_list`, `$file_*`) now adapt through the
+  new async input contract without adding sync-over-async bridges.
+- `SysQuery` now executes nested SQL via awaited `SqlParser.Execute(...)` and awaited
+  `IBsonDataReader.Read(...)`, projecting scalar rows as `{ expr: ... }` documents.
+
+### Remaining limitation
+
+- The core query pipeline is still synchronous after the source-materialization boundary.
+  That is acceptable for now because the remaining stages are CPU-bound in-memory transforms.
 
 ---
 
@@ -201,26 +224,32 @@ rebuild tool path.
 | IFileReader / V7 / V8 | ✅ `IAsyncDisposable` added; enumeration deferred |
 | RebuildService async path | ✅ `RebuildAsync` — no `GetAwaiter().GetResult()` |
 | RebuildService sync path | 🔶 Deferred — kept for constructor/Recovery only |
-| LiteEngine.Rebuild() | ✅ Truly async (`CloseAsync` + `RebuildAsync`) |
+| LiteEngine.Rebuild() | ✅ Truly async (`CloseAsync` + `RebuildAsync` + async reopen) |
 | RebuildContentAsync | ✅ Truly async (async tx entry, `await EnsureIndex`) |
 | RebuildContent (sync) | 🔶 Deferred — constructor Recovery path |
-| Recovery() | 🔶 Deferred — constructor async factory (Phase 7) |
-| TryUpgrade() | 🔶 Deferred — constructor async factory (Phase 7) |
-| SysQuery (`$query`) | 🚫 Disabled — `NotSupportedException` (Phase 7 re-enable) |
+| Recovery() primary path | ✅ Async-native under explicit `LiteEngine.Open(...)` |
+| Recovery() constructor bridge | 🔶 Deferred — legacy constructor compatibility path |
+| TryUpgrade() primary path | ✅ Async-native under explicit `LiteEngine.Open(...)` |
+| TryUpgrade() constructor bridge | 🔶 Deferred — legacy constructor compatibility path |
+| WAL restore primary path | ✅ Async-native under explicit `LiteEngine.Open(...)` |
+| WAL restore constructor bridge | 🔶 Deferred — legacy constructor compatibility path |
+| SystemCollection.Input | ✅ Async-compatible (`IAsyncEnumerable<BsonDocument>`) |
+| SysQuery (`$query`) | ✅ Re-enabled on async system-collection input |
 | SysDump / SysIndexes / SysPageList | ✅ `GetCurrentTransaction()` replaces removed `GetThreadTransaction()` |
 | IOExceptionExtensions | ✅ `Task.Delay().Wait()` → `Thread.Sleep()` |
 
 ---
 
-## Risks for Phase 7
+## Risks for the remaining finish work
 
-1. **Async constructor factory** — `LiteEngine.OpenAsync()` is the key prerequisite for
-   resolving the `Recovery()`, `TryUpgrade()`, and `RebuildService.Rebuild()` sync
-   fallback paths. This must be the first item in Phase 7.
-2. **SysQuery re-enablement** requires `SystemCollection.Input()` to return
-   `IAsyncEnumerable<BsonDocument>`. Changing this interface touches all system
-   collections and the query pipeline's `source` parameter — a non-trivial diff.
+1. **Legacy constructor bridge removal** — the explicit `LiteEngine.Open(...)` lifecycle is now
+   async-native for recovery, upgrade, rebuild reopen, and WAL restore, but constructor-based
+   startup still retains sync bridge overloads.
+2. **System-source buffering boundary** — system collections are now async-compatible,
+   but they are still materialized before the synchronous CPU query pipeline begins.
+   A future end-to-end async query pipeline could remove that buffer if needed.
 3. **Cross-process SharedEngine** — the original named-mutex pattern is gone. Any
    consumer that relied on cross-process locking will silently lose that guarantee.
-   Phase 7 must document this in consumer-facing release notes.
+   The remaining shared/lock-file support-boundary work must document this in consumer-facing
+   release notes and guidance.
 

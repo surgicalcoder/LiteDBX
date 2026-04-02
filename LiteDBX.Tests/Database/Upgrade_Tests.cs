@@ -12,7 +12,7 @@ public class Upgrade_Tests
         // v5 upgrades only from v4!
         using (var tempFile = new TempFile("../../../Resources/v4.db"))
         {
-            await using (var db = new LiteDatabase($"filename={tempFile};upgrade=true"))
+            await using (var db = await LiteDatabase.Open($"filename={tempFile};upgrade=true"))
             {
                 // convert and open database
                 var col1 = db.GetCollection("col1");
@@ -20,7 +20,7 @@ public class Upgrade_Tests
                 (await col1.Count()).Should().Be(3);
             }
 
-            await using (var db = new LiteDatabase($"filename={tempFile};upgrade=true"))
+            await using (var db = await LiteDatabase.Open($"filename={tempFile};upgrade=true"))
             {
                 // database already converted
                 var col1 = db.GetCollection("col1");
@@ -36,7 +36,7 @@ public class Upgrade_Tests
         // v5 upgrades only from v4!
         using (var tempFile = new TempFile("../../../Resources/v4.db"))
         {
-            await using (var db = new LiteDatabase($"filename={tempFile};upgrade=true"))
+            await using (var db = await LiteDatabase.Open($"filename={tempFile};upgrade=true"))
             {
                 // convert and open database
                 var col1 = db.GetCollection("col1");
@@ -44,7 +44,7 @@ public class Upgrade_Tests
                 (await col1.Count()).Should().Be(3);
             }
 
-            await using (var db = new LiteDatabase($"filename={tempFile};upgrade=true"))
+            await using (var db = await LiteDatabase.Open($"filename={tempFile};upgrade=true"))
             {
                 // database already converted
                 var col1 = db.GetCollection("col1");

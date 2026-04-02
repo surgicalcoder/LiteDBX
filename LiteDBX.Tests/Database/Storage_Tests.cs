@@ -31,7 +31,7 @@ public class Storage_Tests
     public async Task Storage_Upload_Download()
     {
         using var f = new TempFile();
-        await using var db = new LiteDatabase(f.Filename);
+        await using var db = await LiteDatabase.Open(f.Filename);
         var fs = db.GetStorage<int>();
 
         // ── Upload two files ──────────────────────────────────────────────────
@@ -85,7 +85,7 @@ public class Storage_Tests
     public async Task Storage_Empty_Upload_Persists_Metadata_And_Can_Be_Found()
     {
         using var f = new TempFile();
-        await using var db = new LiteDatabase(f.Filename);
+        await using var db = await LiteDatabase.Open(f.Filename);
         var fs = db.GetStorage<string>("myFiles", "myChunks");
 
         await fs.Upload("photos/2014/picture-01.jpg", "picture-01.jpg", new MemoryStream());

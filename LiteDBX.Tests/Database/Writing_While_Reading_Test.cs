@@ -10,7 +10,7 @@ public class Writing_While_Reading_Test
     {
         using var f = new TempFile();
 
-        await using (var db = new LiteDatabase(f.Filename))
+        await using (var db = await LiteDatabase.Open(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
             await col.Insert(new MyClass { Name = "John", Description = "Doe" });
@@ -18,7 +18,7 @@ public class Writing_While_Reading_Test
             await col.Insert(new MyClass { Name = "Doe", Description = "Doe" });
         }
 
-        await using (var db = new LiteDatabase(f.Filename))
+        await using (var db = await LiteDatabase.Open(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
 
@@ -30,7 +30,7 @@ public class Writing_While_Reading_Test
             // no explicit transaction needed; each write auto-commits
         }
 
-        await using (var db = new LiteDatabase(f.Filename))
+        await using (var db = await LiteDatabase.Open(f.Filename))
         {
             var col = db.GetCollection<MyClass>("col");
 

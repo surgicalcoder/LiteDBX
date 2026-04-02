@@ -1,19 +1,36 @@
-﻿namespace LiteDbX.Engine;
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace LiteDbX.Engine;
 
 public partial class LiteEngine
 {
     /// <summary>
+    /// Recover a corrupt datafile using the async rebuild process.
+    /// Used by the explicit <c>LiteEngine.Open(...)</c> lifecycle.
+    /// </summary>
+    private async ValueTask Recovery(Collation collation, CancellationToken cancellationToken)
+    {
+        var rebuilder = new RebuildService(_settings);
+        var options = new RebuildOptions
+        {
+            Collation = collation,
+            Password = _settings.Password,
+            IncludeErrorReport = true
+        };
+
+        await rebuilder.RebuildAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Recover a corrupt datafile using the rebuild process.
     /// Called only from <see cref="Open"/> when <c>AutoRebuild = true</c>.
     ///
-    /// Phase 6 deferred: <c>Recovery()</c> is called synchronously from the
-    /// <c>Open()</c> / constructor path and therefore cannot be made async without
-    /// introducing a static async factory method (<c>LiteEngine.OpenAsync()</c>).
-    /// That factory is deferred to Phase 7.
+    /// This sync overload is retained only for the legacy constructor-based startup path.
     ///
     /// Uses <see cref="RebuildService.Rebuild"/> (internal sync overload) rather than
-    /// <see cref="RebuildService.RebuildAsync"/>. Do not change this to the async path
-    /// until the constructor is replaced with an async factory.
+    /// <see cref="RebuildService.RebuildAsync"/>. Do not call this from the explicit
+    /// <c>LiteEngine.Open(...)</c> lifecycle.
     /// </summary>
     private void Recovery(Collation collation)
     {

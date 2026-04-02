@@ -26,9 +26,9 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
         }
 
         [IterationSetup]
-        public void IterationSetup()
+        public async Task IterationSetup()
         {
-            IterationSetupAsync().GetAwaiter().GetResult();
+            await IterationSetupAsync();
         }
 
         [Benchmark]
@@ -38,10 +38,10 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
         }
 
         [IterationCleanup]
-        public void IterationCleanup()
+        public async Task IterationCleanup()
         {
             _collection = null;
-            CloseDatabaseAsync().GetAwaiter().GetResult();
+            await CloseDatabaseAsync();
         }
 
         private async Task IterationSetupAsync()

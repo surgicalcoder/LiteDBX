@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml;
 
 namespace LiteDbX.Stress;
@@ -39,7 +40,7 @@ public class InsertTaskItem : ITestItem
     public int TaskCount { get; }
     public TimeSpan Sleep { get; }
 
-    public BsonValue Execute(LiteDatabase db)
+    public async ValueTask<BsonValue> Execute(LiteDatabase db)
     {
         _collection ??= db.GetCollection(Collection, AutoId);
 
@@ -54,7 +55,7 @@ public class InsertTaskItem : ITestItem
                 doc[field.Name] = field.GetValue();
             }
 
-            _collection.Insert(doc);
+            await _collection.Insert(doc).ConfigureAwait(false);
         }
 
         return count;

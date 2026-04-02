@@ -73,7 +73,7 @@ public class Select_Tests
     [Fact]
     public async Task Query_With_No_Collection()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
 
         var reader = await db.Execute("SELECT DAY(NOW()) as DIA");
         await using (reader)

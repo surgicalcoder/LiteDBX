@@ -115,7 +115,7 @@ public class InheritedMemberConventions_Tests
     {
         var mapper = CreateMapper();
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         var entity = new Customer
@@ -145,7 +145,7 @@ public class InheritedMemberConventions_Tests
         var mapper = CreateMapper(autoId: false);
         var objectId = ObjectId.NewObjectId();
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         var entity = new Customer
@@ -175,7 +175,7 @@ public class InheritedMemberConventions_Tests
         var mapper = CreateMapper(autoId: false);
         var objectId = ObjectId.NewObjectId();
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         await col.Insert(new Customer
@@ -195,7 +195,7 @@ public class InheritedMemberConventions_Tests
         var mapper = CreateMapper(autoId: false);
         var objectId = ObjectId.NewObjectId();
 
-        await using var repo = new LiteRepository(":memory:", mapper);
+        await using var repo = await LiteRepository.Open(":memory:", mapper);
 
         await repo.Insert(new Customer
         {
@@ -217,7 +217,7 @@ public class InheritedMemberConventions_Tests
         var insertedId = ObjectId.NewObjectId();
         var upsertedId = ObjectId.NewObjectId();
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         await col.Insert(insertedId.ToString(), new Customer
@@ -255,7 +255,7 @@ public class InheritedMemberConventions_Tests
     {
         var mapper = CreateMapper(autoId: false);
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         var act = async () => await col.FindById("not-an-object-id");
@@ -266,7 +266,7 @@ public class InheritedMemberConventions_Tests
     [Fact]
     public async Task FindById_Does_Not_Change_Plain_String_Id_Collections()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<UnrelatedEntity>("unrelated");
 
         await col.Insert(new UnrelatedEntity { Id = "plain-id", Name = "Other" });
@@ -283,7 +283,7 @@ public class InheritedMemberConventions_Tests
     {
         var mapper = CreateMapper();
 
-        await using var db = new LiteDatabase(":memory:", mapper);
+        await using var db = await LiteDatabase.Open(":memory:", mapper);
         var col = db.GetCollection<Customer>("customers");
 
         var act = async () => await col.Insert(new Customer

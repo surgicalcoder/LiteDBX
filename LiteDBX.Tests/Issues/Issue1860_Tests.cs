@@ -15,7 +15,7 @@ public class Issue1860_Tests
     [Fact]
     public async Task Constructor_has_enum_bsonctor()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col1 = db.GetCollection<C1>("c1");
         var col3 = db.GetCollection<C3>("c3");
 
@@ -37,7 +37,7 @@ public class Issue1860_Tests
     [Fact]
     public async Task Constructor_has_enum()
     {
-        using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col1 = db.GetCollection<C1>("c1");
         var col2 = db.GetCollection<C2>("c2");
 
@@ -59,7 +59,7 @@ public class Issue1860_Tests
     [Fact]
     public async Task Constructor_has_enum_asint()
     {
-        using var db = new LiteDatabase(":memory:", new BsonMapper { EnumAsInteger = true });
+        await using var db = await LiteDatabase.Open(":memory:", new BsonMapper { EnumAsInteger = true });
         var col1 = db.GetCollection<C1>("c1");
         var col2 = db.GetCollection<C2>("c2");
 

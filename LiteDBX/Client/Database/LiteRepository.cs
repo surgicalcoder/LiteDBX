@@ -10,6 +10,11 @@ namespace LiteDbX;
 /// <summary>
 /// Async-only repository convenience wrapper around <see cref="ILiteDatabase"/>.
 /// Implements <see cref="ILiteRepository"/> — all storage operations are async.
+/// Prefer <see cref="Open(string, BsonMapper, CancellationToken)"/>,
+/// <see cref="Open(ConnectionString, BsonMapper, CancellationToken)"/>, or
+/// <see cref="Open(Stream, BsonMapper, Stream, CancellationToken)"/> together with
+/// <c>await using</c>. Constructor-based opens and blocking <see cref="Dispose()"/> remain as
+/// compatibility bridges only.
 /// </summary>
 public class LiteRepository : ILiteRepository
 {
@@ -20,27 +25,66 @@ public class LiteRepository : ILiteRepository
 
     #endregion
 
+    #region Open
+
+    /// <summary>Open a repository from a connection string using the explicit async-first lifecycle.</summary>
+    public static async ValueTask<LiteRepository> Open(
+        string connectionString,
+        BsonMapper mapper = null,
+        CancellationToken cancellationToken = default)
+        => new(await LiteDatabase.Open(connectionString, mapper, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Open a repository from a <see cref="ConnectionString"/> using the explicit async-first lifecycle.</summary>
+    public static async ValueTask<LiteRepository> Open(
+        ConnectionString connectionString,
+        BsonMapper mapper = null,
+        CancellationToken cancellationToken = default)
+        => new(await LiteDatabase.Open(connectionString, mapper, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Open a stream-backed repository using the explicit async-first lifecycle.</summary>
+    public static async ValueTask<LiteRepository> Open(
+        Stream stream,
+        BsonMapper mapper = null,
+        Stream logStream = null,
+        CancellationToken cancellationToken = default)
+        => new(await LiteDatabase.Open(stream, mapper, logStream, cancellationToken).ConfigureAwait(false));
+
+    #endregion
+
     #region Constructors
 
-    /// <summary>Wrap an existing <see cref="ILiteDatabase"/> instance.</summary>
+    /// <summary>
+    /// Wrap an existing <see cref="ILiteDatabase"/> instance.
+    /// This overload does not open a database; it only layers repository helpers over an already
+    /// initialized database instance.
+    /// </summary>
     public LiteRepository(ILiteDatabase database)
     {
         Database = database ?? throw new ArgumentNullException(nameof(database));
     }
 
-    /// <summary>Open a database from a connection string.</summary>
+    /// <summary>
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(string, BsonMapper, CancellationToken)"/>.
+    /// </summary>
     public LiteRepository(string connectionString, BsonMapper mapper = null)
     {
         Database = new LiteDatabase(connectionString, mapper);
     }
 
-    /// <summary>Open a database from a <see cref="ConnectionString"/>.</summary>
+    /// <summary>
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(ConnectionString, BsonMapper, CancellationToken)"/>.
+    /// </summary>
     public LiteRepository(ConnectionString connectionString, BsonMapper mapper = null)
     {
         Database = new LiteDatabase(connectionString, mapper);
     }
 
-    /// <summary>Open an in-memory or stream-backed database.</summary>
+    /// <summary>
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(Stream, BsonMapper, Stream, CancellationToken)"/>.
+    /// </summary>
     public LiteRepository(Stream stream, BsonMapper mapper = null, Stream logStream = null)
     {
         Database = new LiteDatabase(stream, mapper, logStream);
@@ -187,8 +231,8 @@ public class LiteRepository : ILiteRepository
     public ValueTask DisposeAsync() => Database.DisposeAsync();
 
     /// <summary>
-    /// Synchronous dispose convenience. Delegates to <see cref="DisposeAsync"/> and blocks.
-    /// Prefer <c>await using</c> where possible.
+    /// Synchronous dispose convenience retained for compatibility. Delegates to
+    /// <see cref="DisposeAsync"/> and blocks; prefer <c>await using</c> where possible.
     /// </summary>
     public void Dispose()
     {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace LiteDbX.Engine;
 
@@ -48,6 +49,19 @@ public partial class LiteEngine
             throw new ArgumentNullException(nameof(factory));
         }
 
-        _systemCollections[collectionName] = new SystemCollection(collectionName, factory);
+        _systemCollections[collectionName] = new SystemCollection(
+            collectionName,
+            cancellationToken => SystemCollectionToAsync(factory, cancellationToken));
+    }
+
+    private static async IAsyncEnumerable<BsonDocument> SystemCollectionToAsync(
+        Func<IEnumerable<BsonDocument>> factory,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var doc in factory())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return doc;
+        }
     }
 }

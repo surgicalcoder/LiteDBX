@@ -9,7 +9,7 @@ public class DeleteMany_Tests
     [Fact]
     public async Task DeleteMany_With_Arguments()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var c1 = db.GetCollection("Test");
 
         var d1 = new BsonDocument { ["_id"] = 1, ["p1"] = 1 };

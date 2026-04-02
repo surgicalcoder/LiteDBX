@@ -29,6 +29,6 @@ internal class Open : IShellCommand
             env.Database = null;
         }
 
-        env.Database = new LiteDatabase(connectionString);
+        env.Database = await LiteDatabase.Open(connectionString);
     }
 }

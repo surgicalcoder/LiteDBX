@@ -14,7 +14,7 @@ public class Issue1865_Tests
         BsonMapper.Global.Entity<Point>().DbRef(p => p.Parent, "activity");
         BsonMapper.Global.Entity<Project>().DbRef(p => p.Points, "activity");
 
-        await using var _database = new LiteDatabase(":memory:");
+        await using var _database = await LiteDatabase.Open(":memory:");
         var projectsCol = _database.GetCollection<Project>("activity");
         var pointsCol = _database.GetCollection<Point>("activity");
 

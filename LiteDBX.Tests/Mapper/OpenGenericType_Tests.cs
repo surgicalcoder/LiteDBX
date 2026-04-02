@@ -166,7 +166,7 @@ public class OpenGenericType_Tests
             (itemType, item, m) => m.Serialize(itemType, item),
             (itemType, bson, m) => m.Deserialize(itemType, bson));
 
-        await using var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream(), mapper, new MemoryStream());
         var collection = db.GetCollection<WrapperHolder>("wrappers");
         var rawCollection = db.GetCollection("wrappers");
 

@@ -11,7 +11,7 @@ public class Site_Tests
     public async Task Home_Example()
     {
         using var f = new TempFile();
-        await using var db = new LiteDatabase(f.Filename);
+        await using var db = await LiteDatabase.Open(f.Filename);
 
         // Get customer collection
         var customers = db.GetCollection<Customer>("customers");

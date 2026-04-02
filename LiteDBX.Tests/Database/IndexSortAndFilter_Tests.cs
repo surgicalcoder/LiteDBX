@@ -1,11 +1,10 @@
-﻿using System;
-using FluentAssertions;
+﻿using FluentAssertions;
 using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Database;
 
-public class IndexSortAndFilterTest : IAsyncLifetime, IDisposable
+public class IndexSortAndFilterTest : IAsyncLifetime
 {
     private ILiteCollection<Item> _collection;
     private ILiteDatabase _database;
@@ -14,27 +13,26 @@ public class IndexSortAndFilterTest : IAsyncLifetime, IDisposable
     public IndexSortAndFilterTest()
     {
         _tempFile = new TempFile();
-        _database = new LiteDatabase(_tempFile.Filename);
-        _collection = _database.GetCollection<Item>("items");
     }
 
     public async Task InitializeAsync()
     {
+        _database = await LiteDatabase.Open(_tempFile.Filename);
+        _collection = _database.GetCollection<Item>("items");
+
         await _collection.Upsert(new Item { Id = "C", Value = "Value 1" });
         await _collection.Upsert(new Item { Id = "A", Value = "Value 2" });
         await _collection.Upsert(new Item { Id = "B", Value = "Value 1" });
         await _collection.EnsureIndex("idx_value", x => x.Value);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
-        Dispose();
-        return Task.CompletedTask;
-    }
+        if (_database != null)
+        {
+            await _database.DisposeAsync();
+        }
 
-    public void Dispose()
-    {
-        ((IDisposable)_database)?.Dispose();
         _tempFile?.Dispose();
     }
 

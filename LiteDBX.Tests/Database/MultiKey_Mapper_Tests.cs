@@ -11,7 +11,7 @@ public class MultiKey_Mapper_Tests
     [Fact]
     public async Task MultiKey_Mapper()
     {
-        await using (var db = new LiteDatabase(":memory:"))
+        await using (var db = await LiteDatabase.Open(":memory:"))
         {
             var col = db.GetCollection<MultiKeyDoc>("col");
 

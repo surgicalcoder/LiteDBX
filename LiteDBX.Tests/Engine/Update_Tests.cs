@@ -10,7 +10,7 @@ public class Update_Tests
     [Fact]
     public async Task Update_IndexNodes()
     {
-        await using var db = new LiteEngine();
+        await using var db = await LiteEngine.Open(new EngineSettings { DataStream = new System.IO.MemoryStream() });
 
         var doc = new BsonDocument { ["_id"] = 1, ["name"] = "Mauricio", ["phones"] = new BsonArray { "51", "11" } };
 
@@ -29,7 +29,7 @@ public class Update_Tests
     [Fact]
     public async Task Update_ExtendBlocks()
     {
-        await using var db = new LiteEngine();
+        await using var db = await LiteEngine.Open(new EngineSettings { DataStream = new System.IO.MemoryStream() });
 
         var doc = new BsonDocument { ["_id"] = 1, ["d"] = new byte[1000] };
         await db.Insert("col1", doc);
@@ -70,7 +70,7 @@ public class Update_Tests
     [Fact]
     public async Task Update_Empty_Collection()
     {
-        await using var e = new LiteEngine();
+        await using var e = await LiteEngine.Open(new EngineSettings { DataStream = new System.IO.MemoryStream() });
         var d = new BsonDocument { ["_id"] = 1, ["a"] = "demo" };
         var r = await e.Update("col1", new[] { d });
         r.Should().Be(0);

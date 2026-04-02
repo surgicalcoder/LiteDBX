@@ -18,19 +18,19 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         private ILiteCollection<FileMetaBase> _fileMetaNormalCollection;
 
         [GlobalSetup(Target = nameof(InsertionNormal))]
-        public void GlobalSetupNormal()
+        public async Task GlobalSetupNormal()
         {
             File.Delete(DatabasePath);
             _data = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize);
-            _databaseInstanceNormal = new LiteDatabase(ConnectionString());
+            _databaseInstanceNormal = await LiteDatabase.Open(ConnectionString());
             _fileMetaNormalCollection = _databaseInstanceNormal.GetCollection<FileMetaBase>();
         }
 
         [GlobalSetup(Target = nameof(InsertionInMemory))]
-        public void GlobalSetupInMemory()
+        public async Task GlobalSetupInMemory()
         {
             _data = FileMetaGenerator<FileMetaBase>.GenerateList(DatasetSize);
-            _databaseInstanceInMemory = new LiteDatabase(new System.IO.MemoryStream());
+            _databaseInstanceInMemory = await LiteDatabase.Open(new System.IO.MemoryStream());
             _fileMetaInMemoryCollection = _databaseInstanceInMemory.GetCollection<FileMetaBase>();
         }
 

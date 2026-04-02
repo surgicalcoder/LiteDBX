@@ -12,7 +12,7 @@ public class ParallelQuery_Tests
     [Fact(Skip = "Must fix parallel query fetch")]
     public async Task Query_Parallel()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col  = db.GetCollection<Person>("person");
         var all  = DataGen.Person().ToArray();
 

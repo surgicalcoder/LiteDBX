@@ -18,7 +18,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.Deletion
         public async Task GlobalSetup()
         {
             File.Delete(DatabasePath);
-            DatabaseInstance = new LiteDatabase(ConnectionString());
+            DatabaseInstance = await LiteDatabase.Open(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
             await _fileMetaCollection.EnsureIndex(file => file.IsFavorite);
             await _fileMetaCollection.EnsureIndex(file => file.ShouldBeShown);
@@ -26,9 +26,9 @@ namespace LiteDbX.Benchmarks.Benchmarks.Deletion
         }
         
         [IterationSetup]
-        public void IterationSetup()
+        public async Task IterationSetup()
         {
-            IterationSetupAsync().GetAwaiter().GetResult();
+            await IterationSetupAsync();
         }
 
         private async Task IterationSetupAsync()

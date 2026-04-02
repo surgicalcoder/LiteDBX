@@ -1,8 +1,5 @@
-﻿using LiteDB;
-using LiteDB.Engine;
-
-using System.Reflection.Emit;
-using System.Reflection.PortableExecutable;
+﻿using LiteDbX;
+using LiteDbX.Engine;
 
 var password = "46jLz5QWd5fI3m4LiL2r";
 var path = $"C:\\LiteDB\\Examples\\CrashDB_{DateTime.Now.Ticks}.db";
@@ -25,7 +22,7 @@ var data = Enumerable.Range(1, 10_000).Select(i => new BsonDocument
 
 try
 {
-    using (var db = new LiteEngine(settings))
+    await using (var db = await LiteEngine.Open(settings))
     {
 #if DEBUG
         db.SimulateDiskWriteFail = (page) =>
@@ -39,15 +36,15 @@ try
         };
 #endif
 
-        db.Pragma("USER_VERSION", 123);
+        await db.Pragma("USER_VERSION", 123);
 
-        db.EnsureIndex("col1", "idx_age", "$.age", false);
+        await db.EnsureIndex("col1", "idx_age", BsonExpression.Create("$.age"), false);
 
-        db.Insert("col1", data, BsonAutoId.Int32);
-        db.Insert("col2", data, BsonAutoId.Int32);
+        await db.Insert("col1", data, BsonAutoId.Int32);
+        await db.Insert("col2", data, BsonAutoId.Int32);
 
-        var col1 = db.Query("col1", Query.All()).ToList().Count;
-        var col2 = db.Query("col2", Query.All()).ToList().Count;
+        var col1 = await CountAsync(db.Query("col1", Query.All()));
+        var col2 = await CountAsync(db.Query("col2", Query.All()));
 
         Console.WriteLine("Inserted Col1: " + col1);
         Console.WriteLine("Inserted Col2: " + col2);
@@ -60,15 +57,15 @@ catch (Exception ex)
 
 Console.WriteLine("Recovering database...");
 
-using (var db = new LiteEngine(settings))
+await using (var db = await LiteEngine.Open(settings))
 {
-    var col1 = db.Query("col1", Query.All()).ToList().Count;
-    var col2 = db.Query("col2", Query.All()).ToList().Count;
+    var col1 = await CountAsync(db.Query("col1", Query.All()));
+    var col2 = await CountAsync(db.Query("col2", Query.All()));
 
     Console.WriteLine($"Col1: {col1}");
     Console.WriteLine($"Col2: {col2}");
 
-    var errors = new BsonArray(db.Query("_rebuild_errors", Query.All()).ToList()).ToString();
+    var errors = new BsonArray(await ToListAsync(db.Query("_rebuild_errors", Query.All()))).ToString();
 
     Console.WriteLine("Errors: " + errors);
 
@@ -96,3 +93,27 @@ errors.ForEach(x => Console.WriteLine($"PageID: {x.PageID}/{x.Origin}/#{x.Positi
 
 Console.WriteLine("\n\nEnd.");
 Console.ReadKey();
+
+static async Task<int> CountAsync(IAsyncEnumerable<BsonDocument> source)
+{
+    var count = 0;
+
+    await foreach (var _ in source)
+    {
+        count++;
+    }
+
+    return count;
+}
+
+static async Task<List<BsonDocument>> ToListAsync(IAsyncEnumerable<BsonDocument> source)
+{
+    var results = new List<BsonDocument>();
+
+    await foreach (var item in source)
+    {
+        results.Add(item);
+    }
+
+    return results;
+}

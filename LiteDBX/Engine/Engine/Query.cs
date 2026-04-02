@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Engine;
 
@@ -44,7 +45,7 @@ public partial class LiteEngine
 
         var service = transaction == null ? null : ResolveExplicitTransaction(transaction);
 
-        IEnumerable<BsonDocument> source = null;
+        Func<CancellationToken, ValueTask<IEnumerable<BsonDocument>>> sourceFactory = null;
 
         // Resolve system collections ($) before entering the async iterator so
         // argument validation runs eagerly rather than on first MoveNextAsync.
@@ -52,23 +53,33 @@ public partial class LiteEngine
         {
             SqlParser.ParseCollection(new Tokenizer(collection), out var name, out var options);
             var sys = GetSystemCollection(name);
-            source = sys.Input(options);
+            sourceFactory = async ct =>
+            {
+                var source = new List<BsonDocument>();
+
+                await foreach (var doc in sys.Input(options, ct).ConfigureAwait(false))
+                {
+                    source.Add(doc);
+                }
+
+                return source;
+            };
             collection = sys.Name;
         }
 
-        return QueryCore(collection, query, source, service, cancellationToken);
+        return QueryCore(collection, query, sourceFactory, service, cancellationToken);
     }
 
     private async IAsyncEnumerable<BsonDocument> QueryCore(
         string collection,
         Query query,
-        IEnumerable<BsonDocument> source,
+        Func<CancellationToken, ValueTask<IEnumerable<BsonDocument>>> sourceFactory,
         TransactionService transaction,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var exec = new QueryExecutor(
+        var exec = QueryExecutor.Create(
             this, _state, _monitor, _sortDisk, _disk, _header.Pragmas,
-            collection, query, source, transaction);
+            collection, query, sourceFactory, transaction);
 
         await foreach (var doc in exec.ExecuteQuery(cancellationToken))
         {

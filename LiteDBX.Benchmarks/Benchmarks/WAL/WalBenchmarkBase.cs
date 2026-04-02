@@ -21,7 +21,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
         protected ILiteCollection<WalBenchmarkDocument> GetCollection()
             => DatabaseInstance.GetCollection<WalBenchmarkDocument>(CollectionName, BsonAutoId.Int32);
 
-        protected Task OpenDatabaseAsync(WalEncryptionMode encryptionMode = WalEncryptionMode.None, int checkpointSize = 0)
+        protected async Task OpenDatabaseAsync(WalEncryptionMode encryptionMode = WalEncryptionMode.None, int checkpointSize = 0)
         {
             if (encryptionMode == WalEncryptionMode.Gcm)
             {
@@ -43,10 +43,8 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
                 AESEncryption = encryptionMode == WalEncryptionMode.Gcm ? AESEncryptionType.GCM : AESEncryptionType.ECB
             };
 
-            DatabaseInstance = new LiteDatabase(connectionString);
+            DatabaseInstance = await LiteDatabase.Open(connectionString).ConfigureAwait(false);
             DatabaseInstance.CheckpointSize = checkpointSize;
-
-            return Task.CompletedTask;
         }
 
         protected async Task CloseDatabaseAsync()

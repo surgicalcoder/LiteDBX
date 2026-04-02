@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Stress;
 
@@ -7,5 +8,5 @@ public interface ITestItem
     string Name { get; }
     int TaskCount { get; }
     TimeSpan Sleep { get; }
-    BsonValue Execute(LiteDatabase db);
+    ValueTask<BsonValue> Execute(LiteDatabase db);
 }

@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Engine;
 
@@ -8,7 +11,7 @@ namespace LiteDbX.Engine;
 /// </summary>
 internal class SystemCollection
 {
-    private readonly Func<IEnumerable<BsonDocument>> _input;
+    private readonly Func<CancellationToken, IAsyncEnumerable<BsonDocument>> _input;
 
     public SystemCollection(string name)
     {
@@ -20,7 +23,7 @@ internal class SystemCollection
         Name = name;
     }
 
-    public SystemCollection(string name, Func<IEnumerable<BsonDocument>> input)
+    public SystemCollection(string name, Func<CancellationToken, IAsyncEnumerable<BsonDocument>> input)
         : this(name)
     {
         _input = input;
@@ -34,9 +37,9 @@ internal class SystemCollection
     /// <summary>
     /// Get input data source factory
     /// </summary>
-    public virtual IEnumerable<BsonDocument> Input(BsonValue options)
+    public virtual IAsyncEnumerable<BsonDocument> Input(BsonValue options, CancellationToken cancellationToken = default)
     {
-        return _input();
+        return _input(cancellationToken);
     }
 
     /// <summary>
@@ -76,5 +79,39 @@ internal class SystemCollection
         }
 
         return defaultValue == null ? options : defaultValue;
+    }
+
+    /// <summary>
+    /// Wrap a synchronous document sequence in an async-compatible source contract.
+    /// </summary>
+    protected static async IAsyncEnumerable<BsonDocument> ToAsyncEnumerable(
+        IEnumerable<BsonDocument> source,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var doc in source)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return doc;
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Wrap an async BSON reader as an async sequence of documents.
+    /// Scalar values are projected using <paramref name="projector"/>.
+    /// </summary>
+    protected static async IAsyncEnumerable<BsonDocument> ToAsyncEnumerable(
+        IBsonDataReader reader,
+        Func<BsonValue, BsonDocument> projector,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await using (reader)
+        {
+            while (await reader.Read(cancellationToken).ConfigureAwait(false))
+            {
+                yield return projector(reader.Current);
+            }
+        }
     }
 }

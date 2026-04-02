@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Buffers;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Engine;
 
@@ -10,11 +12,66 @@ public partial class LiteEngine
 
     /// <summary>
     /// Detect and upgrade a v7 datafile to the current format before the disk service opens.
+    /// Used by the explicit <c>LiteEngine.Open(...)</c> lifecycle.
+    /// </summary>
+    private async ValueTask TryUpgrade(CancellationToken cancellationToken)
+    {
+        var filename = _settings.Filename;
+
+        if (!File.Exists(filename))
+        {
+            return;
+        }
+
+        const int bufferSize = 1024;
+        var buffer = _bufferPool.Rent(bufferSize);
+
+        try
+        {
+            using (var stream = new FileStream(
+                       _settings.Filename,
+                       FileMode.Open,
+                       FileAccess.Read,
+                       FileShare.Read,
+                       bufferSize,
+                       FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                stream.Position = 0;
+
+                var bytesRead = 0;
+                while (bytesRead < bufferSize)
+                {
+                    var read = await stream.ReadAsync(buffer, bytesRead, bufferSize - bytesRead, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    bytesRead += read;
+                }
+
+                if (!FileReaderV7.IsVersion(buffer))
+                {
+                    return;
+                }
+            }
+
+            await Recovery(_settings.Collation, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _bufferPool.Return(buffer, true);
+        }
+    }
+
+    /// <summary>
+    /// Detect and upgrade a v7 datafile to the current format before the disk service opens.
     ///
-    /// Phase 6 deferred: <c>TryUpgrade()</c> is called synchronously from <c>Open()</c>
-    /// (constructor path). The file detection read and the subsequent <c>Recovery()</c>
-    /// call both run on the calling thread. Replacing this with an async upgrade path
-    /// requires the Phase 7 async-factory constructor (<c>LiteEngine.OpenAsync()</c>).
+    /// This sync overload is retained only for the legacy constructor-based <c>Open()</c>
+    /// startup path. The explicit <c>LiteEngine.Open(...)</c> lifecycle uses the async
+    /// overload above.
     /// </summary>
     private void TryUpgrade()
     {
@@ -29,24 +86,31 @@ public partial class LiteEngine
         const int bufferSize = 1024;
         var buffer = _bufferPool.Rent(bufferSize);
 
-        using (var stream = new FileStream(
-                   _settings.Filename,
-                   FileMode.Open,
-                   FileAccess.Read,
-                   FileShare.Read, bufferSize))
+        try
         {
-            stream.Position = 0;
-            stream.Read(buffer, 0, bufferSize);
-
-            if (!FileReaderV7.IsVersion(buffer))
+            using (var stream = new FileStream(
+                       _settings.Filename,
+                       FileMode.Open,
+                       FileAccess.Read,
+                       FileShare.Read,
+                       bufferSize))
             {
-                return;
-            }
-        }
+                stream.Position = 0;
+                _ = stream.Read(buffer, 0, bufferSize);
 
-        _bufferPool.Return(buffer, true);
-        // run rebuild process
-        Recovery(_settings.Collation);
+                if (!FileReaderV7.IsVersion(buffer))
+                {
+                    return;
+                }
+            }
+
+            // run rebuild process
+            Recovery(_settings.Collation);
+        }
+        finally
+        {
+            _bufferPool.Return(buffer, true);
+        }
     }
 
     /// <summary>
@@ -74,7 +138,7 @@ public partial class LiteEngine
             Upgrade = true
         };
 
-        using (var db = new LiteEngine(settings))
+        using (var db = OpenSync(settings))
         {
             // database are now converted to v5
         }

@@ -12,7 +12,7 @@ public class Snapshot_Upgrade_Tests
     [Fact]
     public async Task Transaction_Update_Upsert()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection("test");
 
         await using var tx = await db.BeginTransaction();

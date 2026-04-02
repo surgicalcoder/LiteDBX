@@ -21,7 +21,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         {
             File.Delete(DatabasePath);
 
-            DatabaseInstance = new LiteDatabase(ConnectionString());
+            DatabaseInstance = await LiteDatabase.Open(ConnectionString());
             _fileMetaCollection = DatabaseInstance.GetCollection<FileMetaBase>();
             await _fileMetaCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
 
@@ -33,7 +33,7 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         {
             File.Delete(DatabasePath);
 
-            DatabaseInstance = new LiteDatabase(ConnectionString());
+            DatabaseInstance = await LiteDatabase.Open(ConnectionString());
             _fileMetaExclusionCollection = DatabaseInstance.GetCollection<FileMetaWithExclusion>();
             await _fileMetaExclusionCollection.EnsureIndex(fileMeta => fileMeta.ShouldBeShown);
 
@@ -59,9 +59,9 @@ namespace LiteDbX.Benchmarks.Benchmarks.Insertion
         }
 
         [IterationCleanup]
-        public void IterationCleanup()
+        public async Task IterationCleanup()
         {
-            IterationCleanupAsync().GetAwaiter().GetResult();
+            await IterationCleanupAsync();
         }
 
         private async Task IterationCleanupAsync()

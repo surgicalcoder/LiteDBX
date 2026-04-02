@@ -21,7 +21,7 @@ public class DbRef_Index_Tests
               .Field(x => x.Customer, "cust")
               .DbRef(x => x.Customer, "customers");
 
-        await using var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream(), mapper, new MemoryStream());
         var customer = new Customer { Login = "jd", Name = "John Doe" };
         var order = new Order { Customer = customer };
 

@@ -8,28 +8,26 @@ using LiteDbX.Engine;
 namespace LiteDbX;
 
 /// <summary>
-/// Shared-mode engine wrapper that serialises concurrent access within a single process
-/// via an async-safe <see cref="SemaphoreSlim"/>.
+/// Supported shared-access mode for async-safe <b>in-process only</b> serialised access.
 ///
-/// Phase 6 redesign decision:
+/// <para>
+/// <see cref="SharedEngine"/> coordinates all operations through an async-safe
+/// <see cref="SemaphoreSlim"/> and opens an inner <see cref="LiteEngine"/> only for the
+/// duration of the outermost lease. Nested single-call operations in the same async flow are
+/// supported, including buffered query enumeration that releases the lease before yielding to
+/// the caller.
+/// </para>
 ///
-///   The previous implementation used a named OS <see cref="Mutex"/> with a blocking
-///   <c>WaitOne()</c> call, which violates the async-only architecture rule that no
-///   blocking waits may exist in operational paths.
+/// <para>
+/// Cross-process coordination is <b>not</b> provided by this mode. The older named-mutex-based
+/// behaviour is intentionally not preserved. If you need file-backed cross-process write
+/// coordination, use <see cref="LockFileEngine"/> instead.
+/// </para>
 ///
-///   The <see cref="Mutex"/> has been replaced with a <c>SemaphoreSlim(1,1)</c>
-///   whose <see cref="SemaphoreSlim.WaitAsync()"/> is used in all operational paths,
-///   eliminating thread-blocking from the async runtime path.
-///
-///   Cross-process exclusive file coordination (the original named-mutex purpose)
-///   is <b>explicitly deferred</b>. No hidden sync fallback is left in place.
-///   A future phase may introduce async-safe cross-process coordination (e.g. a
-///   polling file-lock strategy using async Task.Delay retries).
-///
-///   <see cref="BeginTransaction"/> remains unsupported: the shared-mode redesign now
-///   supports reentrant nested single-call operations within the same async flow, but
-///   explicit transaction scope across arbitrary user code still requires a deeper lifecycle
-///   redesign.
+/// <para>
+/// Explicit transaction scopes are not supported in this mode. Use <see cref="LiteEngine"/> /
+/// <see cref="LiteDatabase"/> direct mode when you need <see cref="ILiteTransaction"/> scope.
+/// </para>
 /// </summary>
 public class SharedEngine : ILiteEngine
 {
@@ -229,6 +227,8 @@ public class SharedEngine : ILiteEngine
 
         try
         {
+            LiteEngine engine;
+
             lock (_syncRoot)
             {
                 if (_disposed || _disposeRequested)
@@ -236,7 +236,31 @@ public class SharedEngine : ILiteEngine
                     throw new ObjectDisposedException(nameof(SharedEngine));
                 }
 
-                _engine ??= new LiteEngine(_settings);
+                engine = _engine;
+            }
+
+            if (engine == null)
+            {
+                engine = await LiteEngine.Open(_settings, cancellationToken).ConfigureAwait(false);
+            }
+
+            lock (_syncRoot)
+            {
+                if (_disposed || _disposeRequested)
+                {
+                    engine.Dispose();
+                    throw new ObjectDisposedException(nameof(SharedEngine));
+                }
+
+                if (_engine == null)
+                {
+                    _engine = engine;
+                }
+                else if (!ReferenceEquals(_engine, engine))
+                {
+                    engine.Dispose();
+                    engine = _engine;
+                }
 
                 var session = new SharedSession { RefCount = 1 };
 
@@ -246,7 +270,7 @@ public class SharedEngine : ILiteEngine
 
                 _currentLease.Value = context;
 
-                return new Lease(this, session, context, ownsAmbientContext: true, _engine);
+                return new Lease(this, session, context, ownsAmbientContext: true, engine);
             }
         }
         catch
@@ -321,16 +345,13 @@ public class SharedEngine : ILiteEngine
     // ── Transactions ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Explicit multi-call transaction scope remains unsupported.
-    ///
-    /// The reentrant shared-session lease model supports nested single-call
-    /// operations and streaming enumeration in the same async flow, but it does
-    /// not expose an explicit transaction scope across arbitrary user code.
+    /// Explicit transaction scope is not supported in the shared in-process mode.
+    /// Use direct mode when you need <see cref="ILiteTransaction"/>.
     /// </summary>
     public ValueTask<ILiteTransaction> BeginTransaction(CancellationToken cancellationToken = default)
         => throw new NotSupportedException(
-            "Explicit transactions are not supported in SharedEngine. " +
-            "Use nested single-call operations, or use a dedicated LiteEngine instance for transaction scope.");
+            "ConnectionType.Shared supports async-safe in-process serialized operations only. " +
+            "Explicit transactions are not supported; use ConnectionType.Direct for ILiteTransaction scope.");
 
     // ── Query ─────────────────────────────────────────────────────────────────
 
@@ -361,8 +382,8 @@ public class SharedEngine : ILiteEngine
         if (transaction != null)
         {
             throw new NotSupportedException(
-                "Explicit transaction-bound queries are not supported in SharedEngine. " +
-                "Use a dedicated LiteEngine/LiteDatabase instance for transaction scope.");
+                "ConnectionType.Shared does not support explicit transaction-bound queries. " +
+                "Use ConnectionType.Direct for ILiteTransaction scope.");
         }
 
         return Query(collection, query, cancellationToken);
@@ -402,8 +423,8 @@ public class SharedEngine : ILiteEngine
         if (transaction != null)
         {
             throw new NotSupportedException(
-                "Explicit transaction-bound inserts are not supported in SharedEngine. " +
-                "Use a dedicated LiteEngine/LiteDatabase instance for transaction scope.");
+                "ConnectionType.Shared does not support explicit transaction-bound inserts. " +
+                "Use ConnectionType.Direct for ILiteTransaction scope.");
         }
 
         return Insert(collection, docs, autoId, cancellationToken);

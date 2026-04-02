@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace LiteDbX.Engine;
 
@@ -14,13 +15,13 @@ internal class SysFile : SystemCollection
 
     public SysFile() : base("$file") { }
 
-    public override IEnumerable<BsonDocument> Input(BsonValue options)
+    public override IAsyncEnumerable<BsonDocument> Input(BsonValue options, CancellationToken cancellationToken = default)
     {
         var format = GetFormat(options);
 
         if (_formats.TryGetValue(format, out var factory))
         {
-            return factory.Input(options);
+            return factory.Input(options, cancellationToken);
         }
 
         throw new LiteException(0, $"Unknow file format in $file: `{format}`");

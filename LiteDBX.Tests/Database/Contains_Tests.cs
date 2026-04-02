@@ -16,7 +16,7 @@ public class Contains_Tests
         var random = new Random();
         var randomValue = random.Next();
 
-        await using var database = new LiteDatabase(new MemoryStream());
+        await using var database = await LiteDatabase.Open(new MemoryStream());
         var collection = database.GetCollection<ItemWithEnumerable>();
         await collection.Insert(new ItemWithEnumerable { Array = new[] { randomValue } });
 
@@ -30,7 +30,7 @@ public class Contains_Tests
         var random = new Random();
         var randomValue = random.Next();
 
-        await using var database = new LiteDatabase(new MemoryStream());
+        await using var database = await LiteDatabase.Open(new MemoryStream());
         var collection = database.GetCollection<ItemWithEnumerable>();
         await collection.Insert(new ItemWithEnumerable { Enumerable = new[] { randomValue } });
 
@@ -44,7 +44,7 @@ public class Contains_Tests
         var random = new Random();
         var randomValue = random.Next();
 
-        await using var database = new LiteDatabase(new MemoryStream());
+        await using var database = await LiteDatabase.Open(new MemoryStream());
         var collection = database.GetCollection<ItemWithEnumerable>();
         await collection.Insert(new ItemWithEnumerable { Enumerable = new List<int> { randomValue } });
 
@@ -58,7 +58,7 @@ public class Contains_Tests
         var random = new Random();
         var randomValue = random.Next();
 
-        await using var database = new LiteDatabase(new MemoryStream());
+        await using var database = await LiteDatabase.Open(new MemoryStream());
         var collection = database.GetCollection<ItemWithEnumerable>();
         await collection.Insert(new ItemWithEnumerable { List = new List<int> { randomValue } });
 

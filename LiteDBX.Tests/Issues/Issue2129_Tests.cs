@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -8,16 +9,16 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2129_Tests
 {
     [Fact]
-    public void TestInsertAfterDeleteAll()
+    public async Task TestInsertAfterDeleteAll()
     {
-        var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<SwapChance>(nameof(SwapChance));
-        col.EnsureIndex(x => x.Accounts1to2);
-        col.EnsureIndex(x => x.Accounts2to1);
+        await col.EnsureIndex(x => x.Accounts1to2);
+        await col.EnsureIndex(x => x.Accounts2to1);
 
-        col.InsertBulk(GenerateItems());
-        col.DeleteAll();
-        col.InsertBulk(GenerateItems());
+        await col.InsertBulk(GenerateItems());
+        await col.DeleteAll();
+        await col.InsertBulk(GenerateItems());
     }
 
     private IEnumerable<SwapChance> GenerateItems()

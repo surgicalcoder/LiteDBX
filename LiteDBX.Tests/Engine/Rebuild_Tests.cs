@@ -11,7 +11,7 @@ public class Rebuild_Tests
     public async Task Rebuild_After_DropCollection()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(file.Filename);
+        await using var db = await LiteDatabase.Open(file.Filename);
         var col = db.GetCollection<Zip>("zip");
 
         await col.Insert(DataGen.Zip());
@@ -36,7 +36,7 @@ public class Rebuild_Tests
 
         using var file = new TempFile();
 
-        await using (var db = new LiteDatabase(file.Filename))
+        await using (var db = await LiteDatabase.Open(file.Filename))
         {
             var col = db.GetCollection<Zip>();
             db.UserVersion = 99;
@@ -59,7 +59,7 @@ public class Rebuild_Tests
         }
 
         // re-open and rebuild again
-        await using (var db = new LiteDatabase(file.Filename))
+        await using (var db = await LiteDatabase.Open(file.Filename))
         {
             var col = db.GetCollection<Zip>();
             await DoTest(db, col);

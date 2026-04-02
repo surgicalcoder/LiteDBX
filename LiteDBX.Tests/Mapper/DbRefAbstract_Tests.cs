@@ -13,7 +13,7 @@ public class DbRefAbstract_Tests
     [Fact]
     public async Task DbRef_List_Using_Abstract_Class()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var projectsCollection = db.GetCollection<ProjectList>("projects");
         var itemsCollection = db.GetCollection<ItemBase>("items");
 
@@ -38,7 +38,7 @@ public class DbRefAbstract_Tests
     [Fact]
     public async Task DbRef_Item_Using_Abstract_Class()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var projectsCollection = db.GetCollection<ProjectItem>("projects");
         var itemsCollection = db.GetCollection<ItemBase>("items");
 

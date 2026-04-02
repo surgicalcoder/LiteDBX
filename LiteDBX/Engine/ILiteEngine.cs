@@ -13,9 +13,8 @@ namespace LiteDbX.Engine;
 /// than ambient per-thread state; this removes the thread-affinity requirement that is
 /// incompatible with <c>await</c>-based continuations.
 ///
-/// Phase 2 (Transactions and Locking) is responsible for implementing the association
-/// between a transaction scope and engine operations.
-/// Phase 3 (Disk and Streams) is responsible for making the underlying I/O actually async.
+/// Lifecycle is provided by the concrete <see cref="LiteEngine"/> type's static <c>Open(...)</c>
+/// factory, followed by <c>await using</c> / <see cref="IAsyncDisposable.DisposeAsync"/>.
 /// </summary>
 public interface ILiteEngine : IAsyncDisposable
 {

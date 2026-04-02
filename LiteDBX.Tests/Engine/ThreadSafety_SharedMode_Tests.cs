@@ -14,7 +14,7 @@ public class ThreadSafety_SharedMode_Tests
     public async Task Shared_Mode_Exception_During_Enumeration_Releases_Lease()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
+        await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
         var col = db.GetCollection("items");
         await col.Insert(new[]
         {
@@ -41,7 +41,7 @@ public class ThreadSafety_SharedMode_Tests
     public async Task Shared_Mode_Cancellation_During_Enumeration_Releases_Lease()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
+        await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
         var col = db.GetCollection("items");
         await col.Insert(Enumerable.Range(1, 10).Select(i => new BsonDocument { ["_id"] = i }));
 
@@ -63,7 +63,7 @@ public class ThreadSafety_SharedMode_Tests
     public async Task Independent_Shared_Mode_Callers_Can_Serialize_Without_Corruption()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
+        await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
         var col = db.GetCollection("items");
 
         var tasks = Enumerable.Range(1, 20)
@@ -86,7 +86,7 @@ public class ThreadSafety_SharedMode_Tests
     public async Task Shared_Mode_Break_Early_Allows_Immediate_Write_From_Another_Flow()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
+        await using var db = await LiteDatabase.Open(ConcurrencyTestHelper.CreateConnectionString(file, ConnectionType.Shared));
         var col = db.GetCollection("items");
         await col.Insert(new[]
         {

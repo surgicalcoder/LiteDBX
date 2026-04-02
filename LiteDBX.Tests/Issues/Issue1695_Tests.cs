@@ -10,7 +10,7 @@ public class Issue1695_Tests
     [Fact]
     public async Task ICollection_Parameter_Test()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<StateModel>("col");
 
         ICollection<ObjectId> ids = new List<ObjectId>();

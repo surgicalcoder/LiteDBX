@@ -10,7 +10,7 @@ public class Issue1838_Tests
     [Fact]
     public async Task Find_ByDatetime_Offset()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var collection = db.GetCollection<TestType>(nameof(TestType));
 
         // sample data

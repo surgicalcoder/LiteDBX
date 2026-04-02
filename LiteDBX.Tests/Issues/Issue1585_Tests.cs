@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -21,40 +22,40 @@ public class PlayerDto
 public class Issue1585a_Tests
 {
     [Fact]
-    public void Dto_Read()
+    public async Task Dto_Read()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }
 
     [Fact]
-    public void Dto_Read1()
+    public async Task Dto_Read1()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }
 
     [Fact]
-    public void Dto_Read2()
+    public async Task Dto_Read2()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }
@@ -63,40 +64,40 @@ public class Issue1585a_Tests
 public class Issue1585b_Tests
 {
     [Fact]
-    public void Dto_Read3()
+    public async Task Dto_Read3()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }
 
     [Fact]
-    public void Dto_Read4()
+    public async Task Dto_Read4()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }
 
     [Fact]
-    public void Dto_Read5()
+    public async Task Dto_Read5()
     {
-        using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var id = Guid.NewGuid();
             var col = db.GetCollection<PlayerDto>();
-            col.Insert(new PlayerDto(id, "Bob"));
-            var player = col.FindOne(x => x.Id == id);
+            await col.Insert(new PlayerDto(id, "Bob"));
+            var player = await col.FindOne(x => x.Id == id);
             Assert.NotNull(player);
         }
     }

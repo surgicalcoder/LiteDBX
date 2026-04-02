@@ -10,11 +10,10 @@ namespace LiteDbX.Engine;
 ///
 /// Phase 6:
 ///   <see cref="RebuildAsync"/> is the primary path — it awaits all async engine operations
-///   (Pragma, Insert, Checkpoint) without any <c>GetAwaiter().GetResult()</c> calls.
+///   (open, Pragma, Insert, Checkpoint) without any <c>GetAwaiter().GetResult()</c> calls.
 ///
 ///   <see cref="Rebuild"/> (sync) is retained exclusively for the <c>Recovery()</c> call
 ///   inside <see cref="LiteEngine.Open()"/>, which runs synchronously from the constructor.
-///   Full async engine initialisation (static factory method) is deferred to Phase 7.
 ///   Do not call <see cref="Rebuild"/> from any other site.
 /// [ThreadSafe]
 /// </summary>
@@ -62,12 +61,12 @@ internal class RebuildService
         {
             reader.Open();
 
-            await using var engine = new LiteEngine(new EngineSettings
+            await using var engine = await LiteEngine.Open(new EngineSettings
             {
                 Filename   = tempFilename,
                 Collation  = options.Collation,
                 Password   = options.Password
-            });
+            }, cancellationToken).ConfigureAwait(false);
 
             // Disable checkpoint during rebuild so log pages accumulate.
             await engine.Pragma(Pragmas.CHECKPOINT, 0, cancellationToken).ConfigureAwait(false);
@@ -101,13 +100,12 @@ internal class RebuildService
     // ── Sync path (constructor/Recovery only — Phase 6 deferred) ─────────────
 
     /// <summary>
-    /// Synchronous rebuild used exclusively by <see cref="LiteEngine.Recovery()"/>,
+    /// Synchronous rebuild used exclusively by <see cref="LiteEngine"/>'s recovery path,
     /// which is called from the synchronous <c>Open()</c> / constructor path.
     ///
-    /// Phase 6 deferred: this path calls <c>.GetAwaiter().GetResult()</c> on async
-    /// engine methods because the constructor cannot yet be made async. The deferred
-    /// item is creating a static <c>LiteEngine.OpenAsync()</c> factory in Phase 7,
-    /// which will allow the Recovery path to be converted to <see cref="RebuildAsync"/>.
+    /// This path calls <c>.GetAwaiter().GetResult()</c> on async engine methods because the
+    /// legacy constructor-based startup path is still retained as a transitional compatibility
+    /// bridge.
     ///
     /// Do not call this method except from <c>Recovery()</c>.
     /// </summary>
@@ -124,7 +122,7 @@ internal class RebuildService
         {
             reader.Open();
 
-            using var engine = new LiteEngine(new EngineSettings
+            using var engine = LiteEngine.OpenSync(new EngineSettings
             {
                 Filename   = tempFilename,
                 Collation  = options.Collation,

@@ -17,7 +17,7 @@ public class PredicateBuilder_Tests
         p = p.And(x => x.Active);
         p = p.And(x => x.Age > 10);
 
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col = db.GetCollection<User>("user");
 
         await col.Insert(new User { Active = true, Age = 11, Name = "user" });

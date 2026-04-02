@@ -13,7 +13,7 @@ public class AutoId_Tests
     {
         var mapper = new BsonMapper();
 
-        await using var db = new LiteDatabase(new MemoryStream(), mapper, new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream(), mapper, new MemoryStream());
 
         var cs_int  = db.GetCollection<EntityInt>("int");
         var cs_long = db.GetCollection<EntityLong>("long");
@@ -100,7 +100,7 @@ public class AutoId_Tests
     [Fact]
     public async Task AutoId_BsonDocument()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col = db.GetCollection("Writers");
         await col.Insert(new BsonDocument { ["Name"] = "Mark Twain" });
         await col.Insert(new BsonDocument { ["Name"] = "Jack London", ["_id"] = 1 });
@@ -117,7 +117,7 @@ public class AutoId_Tests
     [Fact]
     public async Task AutoId_String_Property_Generates_ObjectId_And_Writes_Back_Hex_String()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col = db.GetCollection<EntityString>("string_autoid");
         var entity = new EntityString { Id = null, Name = "John" };
 
@@ -134,7 +134,7 @@ public class AutoId_Tests
     [Fact]
     public async Task AutoId_No_Duplicate_After_Delete()
     {
-        await using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var col = db.GetCollection<EntityInt>("col1");
             var one = new EntityInt { Name = "One" }; var two = new EntityInt { Name = "Two" };
@@ -148,7 +148,7 @@ public class AutoId_Tests
             three.Id.Should().Be(3); four.Id.Should().Be(4);
         }
 
-        await using (var db = new LiteDatabase(new MemoryStream()))
+        await using (var db = await LiteDatabase.Open(new MemoryStream()))
         {
             var one = new BsonDocument { ["Name"] = "One" }; var two = new BsonDocument { ["Name"] = "Two" };
             var three = new BsonDocument { ["Name"] = "Three" }; var four = new BsonDocument { ["Name"] = "Four" };
@@ -166,7 +166,7 @@ public class AutoId_Tests
     [Fact]
     public async Task AutoId_Zero_Int()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var test = db.GetCollection("Test", BsonAutoId.Int32);
         var doc = new BsonDocument { ["_id"] = 0, ["p1"] = 1 };
         await test.Insert(doc);
@@ -175,7 +175,7 @@ public class AutoId_Tests
     [Fact]
     public async Task AutoId_property()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col1 = db.GetCollection("Col1");
         col1.AutoId.Should().Be(BsonAutoId.ObjectId);
 

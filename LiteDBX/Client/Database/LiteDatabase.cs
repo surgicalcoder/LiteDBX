@@ -15,6 +15,12 @@ namespace LiteDbX;
 /// All data operations, transactions, maintenance, and SQL execution are now async-only.
 /// The former synchronous ambient-transaction API (BeginTrans/Commit/Rollback) is removed;
 /// use <see cref="BeginTransaction"/> and the returned <see cref="ILiteTransaction"/> instead.
+///
+/// The supported lifecycle is <see cref="Open(string, BsonMapper, CancellationToken)"/>,
+/// <see cref="Open(ConnectionString, BsonMapper, CancellationToken)"/>, or
+/// <see cref="Open(Stream, BsonMapper, Stream, CancellationToken)"/> together with
+/// <c>await using</c>. Constructor-based open and synchronous configuration properties remain as
+/// compatibility bridges only.
 /// </summary>
 public class LiteDatabase : ILiteDatabase, IDisposable
 {
@@ -22,16 +28,61 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     private readonly bool _disposeOnClose;
     private ILiteStorage<string> _fs;
 
+    /// <summary>
+    /// Open a database from a connection string using the supported async-first lifecycle.
+    /// </summary>
+    public static ValueTask<LiteDatabase> Open(
+        string connectionString,
+        BsonMapper mapper = null,
+        CancellationToken cancellationToken = default)
+        => Open(new ConnectionString(connectionString), mapper, cancellationToken);
+
+    /// <summary>
+    /// Open a database from a parsed <see cref="ConnectionString"/> using the supported async-first lifecycle.
+    /// </summary>
+    public static async ValueTask<LiteDatabase> Open(
+        ConnectionString connectionString,
+        BsonMapper mapper = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (connectionString == null) throw new ArgumentNullException(nameof(connectionString));
+
+        var engine = await connectionString.OpenEngine(cancellationToken: cancellationToken).ConfigureAwait(false);
+        return new LiteDatabase(engine, mapper, disposeOnClose: true);
+    }
+
+    /// <summary>
+    /// Open a stream-backed database using the supported async-first lifecycle.
+    /// </summary>
+    public static async ValueTask<LiteDatabase> Open(
+        Stream stream,
+        BsonMapper mapper = null,
+        Stream logStream = null,
+        CancellationToken cancellationToken = default)
+    {
+        var engine = await LiteEngine.Open(new EngineSettings
+        {
+            DataStream = stream ?? throw new ArgumentNullException(nameof(stream)),
+            LogStream = logStream
+        }, cancellationToken).ConfigureAwait(false);
+
+        return new LiteDatabase(engine, mapper, disposeOnClose: true);
+    }
+
     #region Constructors
 
     /// <summary>
-    /// Starts LiteDBX database using a connection string for file system database
+    /// Starts LiteDBX database using a connection string for file system database.
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(string, BsonMapper, CancellationToken)"/>.
     /// </summary>
     public LiteDatabase(string connectionString, BsonMapper mapper = null)
         : this(new ConnectionString(connectionString), mapper) { }
 
     /// <summary>
-    /// Starts LiteDBX database using a connection string for file system database
+    /// Starts LiteDBX database using a connection string for file system database.
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(ConnectionString, BsonMapper, CancellationToken)"/>.
     /// </summary>
     public LiteDatabase(ConnectionString connectionString, BsonMapper mapper = null)
     {
@@ -43,6 +94,8 @@ public class LiteDatabase : ILiteDatabase, IDisposable
 
     /// <summary>
     /// Starts LiteDBX database using a generic Stream implementation (mostly MemoryStream).
+    /// Transitional synchronous lifecycle path retained for compatibility; prefer
+    /// <see cref="Open(Stream, BsonMapper, Stream, CancellationToken)"/>.
     /// </summary>
     /// <param name="stream">DataStream reference </param>
     /// <param name="mapper">BsonMapper mapper reference</param>
@@ -59,8 +112,10 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     }
 
     /// <summary>
-    /// Start LiteDBX database using a pre-exiting engine. When LiteDatabase instance dispose engine instance will be disposed
-    /// too
+    /// Wrap an already-open <see cref="ILiteEngine"/>.
+    ///
+    /// This overload does not perform any open work itself. Use it when engine ownership is managed
+    /// externally and control disposal with <paramref name="disposeOnClose"/>.
     /// </summary>
     public LiteDatabase(ILiteEngine engine, BsonMapper mapper = null, bool disposeOnClose = true)
     {
@@ -85,7 +140,9 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     public ILiteStorage<string> FileStorage => _fs ??= GetStorage<string>();
 
     /// <summary>
-    /// Get/Set database user version - use this version number to control database change model
+    /// Get/Set database user version - use this version number to control database change model.
+    /// Transitional synchronous bridge; prefer async <see cref="Pragma(string, CancellationToken)"/>
+    /// and <see cref="Pragma(string, BsonValue, CancellationToken)"/> for async-first configuration access.
     /// </summary>
     public int UserVersion
     {
@@ -94,7 +151,9 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     }
 
     /// <summary>
-    /// Get/Set database timeout - this timeout is used to wait for unlock using transactions
+    /// Get/Set database timeout - this timeout is used to wait for unlock using transactions.
+    /// Transitional synchronous bridge; prefer async pragma access via <see cref="Pragma(string, CancellationToken)"/>
+    /// or <see cref="Pragma(string, BsonValue, CancellationToken)"/>.
     /// </summary>
     public TimeSpan Timeout
     {
@@ -103,7 +162,9 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     }
 
     /// <summary>
-    /// Get/Set if database will deserialize dates in UTC timezone or Local timezone (default: Local)
+    /// Get/Set if database will deserialize dates in UTC timezone or Local timezone (default: Local).
+    /// Transitional synchronous bridge; prefer async pragma access via <see cref="Pragma(string, CancellationToken)"/>
+    /// or <see cref="Pragma(string, BsonValue, CancellationToken)"/>.
     /// </summary>
     public bool UtcDate
     {
@@ -112,7 +173,9 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     }
 
     /// <summary>
-    /// Get/Set database limit size (in bytes). New value must be equals or larger than current database size
+    /// Get/Set database limit size (in bytes). New value must be equals or larger than current database size.
+    /// Transitional synchronous bridge; prefer async pragma access via <see cref="Pragma(string, CancellationToken)"/>
+    /// or <see cref="Pragma(string, BsonValue, CancellationToken)"/>.
     /// </summary>
     public long LimitSize
     {
@@ -123,7 +186,9 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     /// <summary>
     /// Get/Set in how many pages (8 Kb each page) log file will auto checkpoint (copy from log file to data file). Use 0 to
     /// manual-only checkpoint (and no checkpoint on dispose)
-    /// Default: 1000 pages
+    /// Default: 1000 pages.
+    /// Transitional synchronous bridge; prefer async pragma access via <see cref="Pragma(string, CancellationToken)"/>
+    /// or <see cref="Pragma(string, BsonValue, CancellationToken)"/>.
     /// </summary>
     public int CheckpointSize
     {
@@ -132,7 +197,8 @@ public class LiteDatabase : ILiteDatabase, IDisposable
     }
 
     /// <summary>
-    /// Get database collection (this options can be changed only in rebuild proces)
+    /// Get database collection (this options can be changed only in rebuild proces).
+    /// Transitional synchronous bridge; prefer async pragma access via <see cref="Pragma(string, CancellationToken)"/>.
     /// </summary>
     public Collation Collation
         => new(_engine.Pragma(Pragmas.COLLATION).GetAwaiter().GetResult().AsString);
@@ -319,6 +385,10 @@ public class LiteDatabase : ILiteDatabase, IDisposable
 
     // ── IAsyncDisposable / IDisposable ────────────────────────────────────────
 
+    /// <summary>
+    /// Dispose the database using the async-first lifecycle. Prefer <c>await using</c> so engine
+    /// shutdown, checkpoint, and stream cleanup can complete without blocking a thread.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposeOnClose)
@@ -329,6 +399,10 @@ public class LiteDatabase : ILiteDatabase, IDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Blocking disposal convenience retained for compatibility. Prefer <see cref="DisposeAsync"/>
+    /// or <c>await using</c> in async-first code.
+    /// </summary>
     public void Dispose()
     {
         Dispose(true);

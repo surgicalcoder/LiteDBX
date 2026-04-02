@@ -71,7 +71,8 @@ supported runtime is .NET 6+.
 
 **AES constructor:** The `AesStream` constructor (password verification, salt handling) is
 synchronous. It reads and writes a small number of bytes at open time. This is a startup-only
-sync block and is deferred to Phase 8 (lifecycle) for an async-open path.
+sync block and is deferred to the remaining lifecycle/open cleanup workstream tracked in
+`docs/async-redesign/REMAINING_WORK_IMPLEMENTATION_PLAN.md`.
 
 ---
 
@@ -95,16 +96,16 @@ write) and `MarkAsInvalidStateAsync` (the abnormal-close path) call `FlushToDisk
 
 ---
 
-## 6. Startup sync bridge — `DiskService` constructor and `RestoreIndex`
+## 6. Startup bootstrap — `DiskService` constructor and WAL restore
 
-**Decision:** `DiskService`'s constructor calls `Initialize(...)` (sync) and `ReadFull` (sync
-iterator). `WalIndexService.RestoreIndex` uses `ReadFull`. Both are intentionally kept
-synchronous for the engine startup path.
+**Decision:** The explicit `LiteEngine.Open(...)` lifecycle now uses async WAL restore, but
+`DiskService` construction/initialization remains partially synchronous and the constructor-based
+legacy startup path still uses the sync `RestoreIndex(ref HeaderPage)` bridge.
 
 **Rationale:**
-Converting these to async requires an async factory method (`LiteEngine.OpenAsync`). This is a
-Phase 8 (lifecycle) concern. The sync paths are annotated with XML doc comments directing future
-readers to Phase 8.
+Startup orchestration is now on the explicit `LiteEngine.Open(...)` lifecycle for the primary
+supported path, which allows WAL restore to use `ReadFullAsync`. The remaining sync bootstrap is
+isolated to `DiskService` construction/initialization and the legacy constructor path.
 
 ---
 
@@ -149,10 +150,10 @@ it calls `SpillToFileAsync` which uses `CopyToAsync` to copy the in-memory conte
 
 ## 10. Deferred items
 
-| Item | Reason deferred | Target phase |
+| Item | Reason deferred | Remaining workstream |
 |---|---|---|
-| `LiteEngine.Open()` / `LiteEngine.OpenAsync()` | Requires full async factory/lifecycle infrastructure | Phase 8 |
-| `WalIndexService.RestoreIndex` async version | Needs async `Open` path as a prerequisite | Phase 8 |
+| `LiteEngine` explicit open lifecycle cleanup | Supported `LiteEngine.Open(...)` now exists, but constructor-driven startup remains transitional in some paths | Lifecycle/open cleanup |
+| `DiskService` startup initialization async factory | `Initialize(...)`, `GetLength()`, and related bootstrap work are still synchronous in the current disk-service construction flow | Startup/recovery bridge removal |
 | `DiskReader.ReadPage` callers converted to async | Part of query pipeline async conversion | Phase 4 |
 | `TransactionService.Safepoint()` async version | Called from sync query pipeline | Phase 4 |
 | Test consumer `Checkpoint()` awaiting | Tests not yet converted to async | Phase 7 |

@@ -33,9 +33,9 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
         }
 
         [IterationSetup]
-        public void IterationSetup()
+        public async Task IterationSetup()
         {
-            OpenDatabaseAsync(checkpointSize: 0).GetAwaiter().GetResult();
+            await OpenDatabaseAsync(checkpointSize: 0);
         }
 
         [Benchmark]
@@ -54,9 +54,9 @@ namespace LiteDbX.Benchmarks.Benchmarks.WAL
         }
 
         [IterationCleanup]
-        public void IterationCleanup()
+        public async Task IterationCleanup()
         {
-            CloseDatabaseAsync().GetAwaiter().GetResult();
+            await CloseDatabaseAsync();
         }
 
         private async Task<int> ExecuteWriterAsync(int writerId)

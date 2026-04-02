@@ -13,7 +13,7 @@ public class Issue2471_Test
     [Fact]
     public async Task TestFragmentDB_FindByIDException()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var collection = db.GetCollection<object>("fragtest");
 
         var fragment = new object();
@@ -31,7 +31,7 @@ public class Issue2471_Test
     [Fact]
     public async Task MultipleReadCleansUpTransaction()
     {
-        await using var database = new LiteDatabase(":memory:");
+        await using var database = await LiteDatabase.Open(":memory:");
         var collection = database.GetCollection("test");
         await collection.Insert(new BsonDocument { ["_id"] = 1 });
 
@@ -44,7 +44,7 @@ public class Issue2471_Test
     [Fact]
     public async Task Ensure_Query_GetPlan_Releases_Lock()
     {
-        await using var db = new LiteDatabase(new MemoryStream());
+        await using var db = await LiteDatabase.Open(new MemoryStream());
         var col = db.GetCollection<User>();
 
         await col.Insert(new User { Name = "John Doe", Phones = new[] { 1, 3, 5 }, Addresses = new List<Address> { new() { Street = "Av.1" }, new() { Street = "Av.3" } } });

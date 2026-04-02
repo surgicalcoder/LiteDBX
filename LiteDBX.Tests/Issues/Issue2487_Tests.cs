@@ -1,5 +1,6 @@
 ﻿using FluentAssertions;
 using System.Threading.Tasks;
+using LiteDbX.Engine;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -9,9 +10,9 @@ public class Issue2487_tests
     [Fact]
     public async Task Test_Contains_EmptyStrings()
     {
-        await using var engine = new ConnectionString(":memory:").CreateEngine();
+        await using var engine = await LiteEngine.Open(new EngineSettings { Filename = ":memory:" });
 
-        await using var db = new LiteDatabase(engine);
+        await using var db = new LiteDatabase(engine, disposeOnClose: false);
         var collection = db.GetCollection<DataClass>("data");
 
         await collection.Insert(new DataClass { Foo = "bar", Bar = "abc" });

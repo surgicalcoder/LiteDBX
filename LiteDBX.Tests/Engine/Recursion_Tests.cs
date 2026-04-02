@@ -94,7 +94,7 @@ public class Recursion_Tests
     {
         using var file = new TempFile();
 
-        await using var database = new LiteDatabase(new ConnectionString
+        await using var database = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             Connection = connectionType

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LiteDbX.Stress;
 
@@ -26,28 +27,26 @@ public class TestExecution
     public TimeSpan Duration { get; }
     public Stopwatch Timer { get; } = new();
 
-    public void Execute()
+    public async Task Execute()
     {
         if (_file.Delete)
         {
             DeleteFiles();
         }
 
-        _db = new LiteDatabase(_file.Filename);
-        _db.Pragma("TIMEOUT", (int)_file.Timeout.TotalSeconds);
+        _db = await LiteDatabase.Open(_file.Filename).ConfigureAwait(false);
+        await _db.Pragma("TIMEOUT", (int)_file.Timeout.TotalSeconds).ConfigureAwait(false);
 
         foreach (var setup in _file.Setup)
         {
-            _db.Execute(setup);
+            await using var reader = await _db.Execute(setup).ConfigureAwait(false);
+            while (await reader.Read().ConfigureAwait(false)) { }
         }
 
         // create all threads
         CreateThreads();
 
-        // start report thread
-        var t = new Thread(() => ReportThread());
-        t.Name = "REPORT";
-        t.Start();
+        await ReportThread().ConfigureAwait(false);
     }
 
     private void DeleteFiles()
@@ -65,16 +64,31 @@ public class TestExecution
 
     private void CreateThreads()
     {
+        var workerId = 0;
+
         foreach (var task in _file.Tasks)
         {
             for (var i = 0; i < task.TaskCount; i++)
             {
-                var thread = new Thread(() =>
+                var currentWorkerId = Interlocked.Increment(ref workerId);
+
+                var info = new ThreadInfo
+                {
+                    Task = task
+                };
+
+                info.WorkerTask = Task.Run(async () =>
                 {
                     while (true)
                     {
-                        var info = _threads[Thread.CurrentThread.ManagedThreadId];
-                        info.CancellationTokenSource.Token.WaitHandle.WaitOne(task.Sleep);
+                        try
+                        {
+                            await Task.Delay(task.Sleep, info.CancellationTokenSource.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
 
                         if (info.CancellationTokenSource.Token.IsCancellationRequested)
                         {
@@ -86,7 +100,7 @@ public class TestExecution
 
                         try
                         {
-                            info.Result = task.Execute(_db);
+                            info.Result = await task.Execute(_db).ConfigureAwait(false);
                         }
                         catch (Exception ex)
                         {
@@ -109,21 +123,14 @@ public class TestExecution
                         info.Counter++;
                         info.LastRun = DateTime.Now;
                     }
-                });
+                }, info.CancellationTokenSource.Token);
 
-                _threads[thread.ManagedThreadId] = new ThreadInfo
-                {
-                    Task = task,
-                    Thread = thread
-                };
-
-                thread.Name = task.Name;
-                thread.Start();
+                _threads[currentWorkerId] = info;
             }
         }
     }
 
-    private void ReportThread()
+    private async Task ReportThread()
     {
         Timer.Start();
 
@@ -131,7 +138,7 @@ public class TestExecution
 
         while (Timer.Elapsed < Duration && _running)
         {
-            Thread.Sleep(Math.Min(1000, (int)Duration.Subtract(Timer.Elapsed).TotalMilliseconds));
+            await Task.Delay(Math.Min(1000, (int)Duration.Subtract(Timer.Elapsed).TotalMilliseconds)).ConfigureAwait(false);
 
             ReportPrint(output);
 
@@ -139,11 +146,11 @@ public class TestExecution
             Console.WriteLine(output.ToString());
         }
 
-        StopRunning();
+        await StopRunning().ConfigureAwait(false);
 
         Timer.Stop();
 
-        _db.Dispose();
+        await _db.DisposeAsync().ConfigureAwait(false);
 
         ReportPrint(output);
         ReportSummary(output);
@@ -206,12 +213,19 @@ public class TestExecution
         }
     }
 
-    private void StopRunning()
+    private async Task StopRunning()
     {
         foreach (var t in _threads.Values)
         {
             t.CancellationTokenSource.Cancel();
-            t.Thread.Join();
+        }
+
+        foreach (var t in _threads.Values)
+        {
+            if (t.WorkerTask != null)
+            {
+                await t.WorkerTask.ConfigureAwait(false);
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml;
 
 namespace LiteDbX.Stress;
@@ -19,17 +20,9 @@ public class SqlTaskItem : ITestItem
     public int TaskCount { get; }
     public TimeSpan Sleep { get; }
 
-    public BsonValue Execute(LiteDatabase db)
+    public async ValueTask<BsonValue> Execute(LiteDatabase db)
     {
-        // ITestItem.Execute is a sync interface; bridge to async via GetAwaiter().GetResult()
-        var reader = db.Execute(Sql).GetAwaiter().GetResult();
-        try
-        {
-            return reader.FirstOrDefault().GetAwaiter().GetResult();
-        }
-        finally
-        {
-            reader.DisposeAsync().GetAwaiter().GetResult();
-        }
+        await using var reader = await db.Execute(Sql).ConfigureAwait(false);
+        return await reader.FirstOrDefault().ConfigureAwait(false);
     }
 }

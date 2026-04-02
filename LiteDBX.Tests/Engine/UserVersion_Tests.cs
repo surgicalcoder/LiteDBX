@@ -12,14 +12,14 @@ public class UserVersion_Tests
     {
         using var file = new TempFile();
 
-        await using (var db = new LiteDatabase(file.Filename))
+        await using (var db = await LiteDatabase.Open(file.Filename))
         {
             db.UserVersion.Should().Be(0);
             db.UserVersion = 5;
             await db.Checkpoint();
         }
 
-        await using (var db = new LiteDatabase(file.Filename))
+        await using (var db = await LiteDatabase.Open(file.Filename))
         {
             db.UserVersion.Should().Be(5);
         }

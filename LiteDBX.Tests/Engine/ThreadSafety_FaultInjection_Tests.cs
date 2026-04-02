@@ -27,7 +27,7 @@ public class ThreadSafety_FaultInjection_Tests
 
         try
         {
-            await using var engine = new LiteEngine(settings);
+            await using var engine = await LiteEngine.Open(settings);
             await using var db = new LiteDatabase(engine, disposeOnClose: false);
             var first = db.GetCollection("first");
             var second = db.GetCollection("second");
@@ -68,7 +68,7 @@ public class ThreadSafety_FaultInjection_Tests
             // The corrupted run is expected to fail; reopen validation below is the real assertion.
         }
 
-        await using var reopened = new LiteDatabase(new ConnectionString
+        await using var reopened = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             AutoRebuild = true

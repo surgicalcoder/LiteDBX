@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace LiteDbX.Engine;
 
@@ -15,11 +16,11 @@ internal class SysDump : SystemCollection
         _monitor = monitor;
     }
 
-    public override IEnumerable<BsonDocument> Input(BsonValue options)
+    public override IAsyncEnumerable<BsonDocument> Input(BsonValue options, CancellationToken cancellationToken = default)
     {
         var pageID = GetOption(options, "pageID");
 
-        return DumpPages(pageID == null ? null : (uint?)pageID.AsInt32);
+        return ToAsyncEnumerable(DumpPages(pageID == null ? null : (uint?)pageID.AsInt32), cancellationToken);
     }
 
     private IEnumerable<BsonDocument> DumpPages(uint? pageID)

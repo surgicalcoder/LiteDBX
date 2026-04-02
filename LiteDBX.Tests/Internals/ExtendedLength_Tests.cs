@@ -20,7 +20,7 @@ public class ExtendedLength_Tests
     [Fact]
     public async Task IndexExtendedLength_Tests()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection("customers", BsonAutoId.Int32);
         await col.EnsureIndex("$.Name");
         await col.Insert(new BsonDocument { ["Name"] = new string('A', 1010) });

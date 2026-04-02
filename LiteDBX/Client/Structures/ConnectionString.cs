@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using LiteDbX.Engine;
 
 namespace LiteDbX;
@@ -66,7 +68,11 @@ public class ConnectionString
     }
 
     /// <summary>
-    /// "connection": Return how engine will be open (default: Direct)
+    /// "connection": Select how the engine will be opened (default: Direct).
+    ///
+    /// - Direct: normal fully capable mode; supports explicit transactions.
+    /// - Shared: async-safe in-process serialized mode; no cross-process guarantee and no explicit transactions.
+    /// - LockFile: physical-file cross-process write-coordination mode; no explicit transactions.
     /// </summary>
     public ConnectionType Connection { get; set; } = ConnectionType.Direct;
     
@@ -122,9 +128,50 @@ public class ConnectionString
     public string this[string key] => _values.GetOrDefault(key);
 
     /// <summary>
-    /// Create ILiteEngine instance according string connection parameters. Direct, Shared and LockFile are supported.
+    /// Create an <see cref="ILiteEngine"/> from the parsed connection string using the legacy
+    /// constructor-based lifecycle.
+    ///
+    /// This method is retained only as compatibility glue for constructor-era callers such as
+    /// <see cref="LiteDatabase"/> and <see cref="LiteRepository"/> synchronous constructors.
+    /// Prefer <see cref="OpenEngine"/> for the supported async-first lifecycle.
     /// </summary>
     internal ILiteEngine CreateEngine(Action<EngineSettings> engineSettingsAction = null)
+    {
+        var settings = CreateSettings(engineSettingsAction);
+
+        return Connection switch
+        {
+            ConnectionType.Direct => new LiteEngine(settings),
+            ConnectionType.Shared => new SharedEngine(settings),
+            ConnectionType.LockFile => new LockFileEngine(settings),
+            _ => throw new NotImplementedException()
+        };
+    }
+
+    /// <summary>
+    /// Open an engine using the supported async-first lifecycle.
+    ///
+    /// This is the canonical lifecycle boundary for connection-string driven engine creation.
+    /// Direct mode opens a dedicated <see cref="LiteEngine"/>.
+    /// Shared mode returns an in-process serialized wrapper.
+    /// LockFile mode returns a physical-file cross-process coordination wrapper.
+    /// </summary>
+    internal async ValueTask<ILiteEngine> OpenEngine(
+        Action<EngineSettings> engineSettingsAction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = CreateSettings(engineSettingsAction);
+
+        return Connection switch
+        {
+            ConnectionType.Direct => await LiteEngine.Open(settings, cancellationToken).ConfigureAwait(false),
+            ConnectionType.Shared => new SharedEngine(settings),
+            ConnectionType.LockFile => new LockFileEngine(settings),
+            _ => throw new NotImplementedException()
+        };
+    }
+
+    private EngineSettings CreateSettings(Action<EngineSettings> engineSettingsAction)
     {
         var settings = new EngineSettings
         {
@@ -140,12 +187,6 @@ public class ConnectionString
 
         engineSettingsAction?.Invoke(settings);
 
-        return Connection switch
-        {
-            ConnectionType.Direct => new LiteEngine(settings),
-            ConnectionType.Shared => new SharedEngine(settings),
-            ConnectionType.LockFile => new LockFileEngine(settings),
-            _ => throw new NotImplementedException()
-        };
+        return settings;
     }
 }

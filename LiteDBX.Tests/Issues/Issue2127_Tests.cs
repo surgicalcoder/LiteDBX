@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -11,7 +11,7 @@ public class Issue2127_Tests
     public class ReproTests
     {
         [Fact(Skip = "To slow for a unit test in a build process")]
-        public void InsertItemBackToBack_Test()
+        public async Task InsertItemBackToBack_Test()
         {
             var databaseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DatabaseLocation");
             var databasePath = Path.Combine(databaseDirectory, "SampleDatabase.db");
@@ -27,7 +27,7 @@ public class Issue2127_Tests
 
                 Directory.CreateDirectory(databaseDirectory);
 
-                using var subject = new ExampleItemRepository(databasePath);
+                await using var subject = await ExampleItemRepository.CreateAsync(databasePath);
 
                 var item1 = new ExampleItem
                 {
@@ -40,11 +40,11 @@ public class Issue2127_Tests
                     SomeProperty = Guid.NewGuid().ToString()
                 };
 
-                subject.Insert(item1);
-                subject.Insert(item2);
+                await subject.Insert(item1);
+                await subject.Insert(item2);
 
                 // Allow items to be processed.
-                Thread.Sleep(1000);
+                await Task.Delay(1000);
 
                 var liteDbPath = databasePath;
                 var liteDbLogPath = databaseLogPath;
@@ -69,13 +69,18 @@ public class Issue2127_Tests
         public string SomeProperty { get; set; }
     }
 
-    public sealed class ExampleItemRepository : IDisposable
+    public sealed class ExampleItemRepository : IAsyncDisposable
     {
         public const string DatabaseFileName = "SampleDb";
 
         private readonly LiteDatabase _liteDb;
 
-        public ExampleItemRepository(string databasePath)
+        private ExampleItemRepository(LiteDatabase liteDb)
+        {
+            _liteDb = liteDb;
+        }
+
+        public static async ValueTask<ExampleItemRepository> CreateAsync(string databasePath)
         {
             var connectionString = new ConnectionString
             {
@@ -83,18 +88,18 @@ public class Issue2127_Tests
                 Connection = ConnectionType.Direct
             };
 
-            _liteDb = new LiteDatabase(connectionString);
+            return new ExampleItemRepository(await LiteDatabase.Open(connectionString));
         }
 
-        public void Dispose()
+        public ValueTask DisposeAsync()
         {
-            _liteDb?.Dispose();
+            return _liteDb.DisposeAsync();
         }
 
-        public void Insert(ExampleItem item)
+        public async ValueTask Insert(ExampleItem item)
         {
             var collection = _liteDb.GetCollection<ExampleItem>();
-            collection.Insert(item);
+            _ = await collection.Insert(item);
         }
     }
 }

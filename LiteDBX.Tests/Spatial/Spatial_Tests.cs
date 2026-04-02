@@ -13,7 +13,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Near_Returns_Ordered_Within_Radius()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -34,7 +34,7 @@ public class Spatial_Tests
     [Fact]
     public async Task BoundingBox_Crosses_Antimeridian()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -70,7 +70,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Within_Polygon_Excludes_Hole()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsureShapeIndex<Place, GeoPoint>(col, x => x.Location);
 
@@ -108,7 +108,7 @@ public class Spatial_Tests
     [Fact]
     public async Task GeoHash_Recomputes_On_Update()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -138,7 +138,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Intersects_Line_Touches_Polygon_Edge()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var roads = db.GetCollection<Road>("roads");
         await SpatialApi.EnsureShapeIndex<Road, GeoLineString>(roads, r => r.Path);
 
@@ -168,7 +168,7 @@ public class Spatial_Tests
     [Fact]
     public async Task EnsurePointIndex_Persists_Precision_Metadata()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         var meta = db.GetCollection<BsonDocument>("_spatial_meta");
 
@@ -182,7 +182,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Query_Near_Helper_Filters_Results()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -202,7 +202,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Collection_Spatial_Helpers_Find_Count_And_Delete_Work()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -230,7 +230,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Collection_FindWithin_Helper_Works()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsureShapeIndex(col, x => x.Location);
 
@@ -258,7 +258,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Linq_Near_Uses_Spatial_Operator()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsurePointIndex(col, x => x.Location);
 
@@ -278,7 +278,7 @@ public class Spatial_Tests
     [Fact]
     public async Task Linq_Within_Uses_Spatial_Operator()
     {
-        await using var db = new LiteDatabase(":memory:");
+        await using var db = await LiteDatabase.Open(":memory:");
         var col = db.GetCollection<Place>("p");
         await SpatialApi.EnsureShapeIndex<Place, GeoPoint>(col, x => x.Location);
 

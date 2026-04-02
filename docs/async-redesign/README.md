@@ -4,6 +4,13 @@ This folder contains phase-by-phase handoff documents for the async-only LiteDB 
 
 These files are meant to be given to another LLM or engineer one phase at a time so work can be performed in manageable chunks.
 
+## Finishing Roadmap
+
+The phase documents in this folder describe the major redesign waves that have already been executed.
+For the remaining endgame work, use `REMAINING_WORK_IMPLEMENTATION_PLAN.md` as the primary source of truth.
+It consolidates lifecycle/open cleanup, startup/recovery bridge removal, system-collection async work,
+shared/lock-file support-boundary clarification, and final consumer migration.
+
 ## Core Design Rules That Apply To Every Phase
 
 These are **non-negotiable** unless a later architectural decision explicitly replaces them:

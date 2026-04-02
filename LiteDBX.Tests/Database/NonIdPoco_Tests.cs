@@ -10,7 +10,7 @@ public class MissingIdDocTest
     public async Task MissingIdDoc_Test()
     {
         using var file = new TempFile();
-        await using var db = new LiteDatabase(file.Filename);
+        await using var db = await LiteDatabase.Open(file.Filename);
         var col = db.GetCollection<MissingIdDoc>("col");
 
         var p = new MissingIdDoc { Name = "John", Age = 39 };

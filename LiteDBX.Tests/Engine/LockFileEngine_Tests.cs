@@ -15,7 +15,7 @@ public class LockFileEngine_Tests
         Action act = () => _ = new LockFileEngine(new LiteDbX.Engine.EngineSettings { Filename = ":memory:" });
 
         act.Should().Throw<NotSupportedException>()
-            .WithMessage("*physical Filename*");
+            .WithMessage("*physical file-backed*");
     }
 
     [Fact]
@@ -24,7 +24,7 @@ public class LockFileEngine_Tests
         using var file = new TempFile();
         var lockFilename = FileHelper.GetLockFile(file.Filename);
 
-        await using var database = new LiteDatabase(new ConnectionString
+        await using var database = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             Connection = ConnectionType.LockFile
@@ -52,13 +52,13 @@ public class LockFileEngine_Tests
     {
         using var file = new TempFile();
 
-        await using var first = new LiteDatabase(new ConnectionString
+        await using var first = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             Connection = ConnectionType.LockFile
         });
 
-        await using var second = new LiteDatabase(new ConnectionString
+        await using var second = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             Connection = ConnectionType.LockFile
@@ -79,7 +79,7 @@ public class LockFileEngine_Tests
     {
         using var file = new TempFile();
 
-        await using var database = new LiteDatabase(new ConnectionString
+        await using var database = await LiteDatabase.Open(new ConnectionString
         {
             Filename = file.Filename,
             Connection = ConnectionType.LockFile

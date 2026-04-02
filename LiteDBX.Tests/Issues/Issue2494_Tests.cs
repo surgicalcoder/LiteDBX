@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace LiteDbX.Tests.Issues;
@@ -6,7 +7,7 @@ namespace LiteDbX.Tests.Issues;
 public class Issue2494_Tests
 {
     [Fact]
-    public static void Test()
+    public static async Task Test()
     {
         var original = "../../../Resources/Issue_2494_EncryptedV4.db";
         using var filename = new TempFile(original);
@@ -17,10 +18,13 @@ public class Issue2494_Tests
             Upgrade = true
         };
 
-        using (var db = new LiteDatabase(connectionString)) // <= throws as of version 5.0.18
+        await using (var db = await LiteDatabase.Open(connectionString))
         {
             var col = db.GetCollection<PlayerDto>();
-            col.FindAll();
+
+            await foreach (var _ in col.FindAll())
+            {
+            }
         }
     }
 
