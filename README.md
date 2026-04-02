@@ -1,13 +1,22 @@
-# LiteDB - A .NET NoSQL Document Store in a single data file
+# LiteDbX - A modern, async first, rewrite of LiteDB.
 
-[![NuGet Version](https://img.shields.io/nuget/v/LiteDB)](https://www.nuget.org/packages/LiteDB/)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/LiteDB)](https://www.nuget.org/packages/LiteDB/)
-[![](https://dcbadge.limes.pink/api/server/u8seFBH9Zu?style=flat-square)](https://discord.gg/u8seFBH9Zu)
+[![NuGet Version](https://img.shields.io/nuget/v/LiteDbX)](https://www.nuget.org/packages/LiteDbX/)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/LiteDbX)](https://www.nuget.org/packages/LiteDbX/)
 
-[![NuGet Version](https://img.shields.io/nuget/vpre/LiteDB)](https://www.nuget.org/packages/LiteDB/absoluteLatest)
-[![Build status](https://img.shields.io/github/actions/workflow/status/litedb-org/LiteDB/publish-prerelease.yml)](https://github.com/litedb-org/LiteDB/actions/workflows/publish-prerelease.yml)
+[![NuGet Version](https://img.shields.io/nuget/vpre/LiteDbX)](https://www.nuget.org/packages/LiteDbX/absoluteLatest)
+<!--[![Build status](https://img.shields.io/github/actions/workflow/status/litedb-org/LiteDB/publish-prerelease.yml)](https://github.com/litedb-org/LiteDB/actions/workflows/publish-prerelease.yml)-->
 <!--[![Build status](https://ci.appveyor.com/api/projects/status/sfe8he0vik18m033?svg=true)](https://ci.appveyor.com/project/mbdavid/litedb) -->
-LiteDB is a small, fast and lightweight .NET NoSQL embedded database. 
+LiteDbX is a modern, async first, rewrite of LiteDB, evolving the small, fast embedded NoSQL database, into a modern design. No thread locks, multiprocess, async support, out of the box.
+
+- Async first, natively
+- IAsyncEnumerable support
+- IQueryable support, natively
+- Considerable improvements to BsonMapper
+- Multithreading support
+- Improved AES cryptography with more secure cipher
+- 58% more unit tests
+
+Plus all the great features of LiteDB:
 
 - Serverless NoSQL Document Store
 - Simple API, similar to MongoDB
@@ -22,42 +31,20 @@ LiteDB is a small, fast and lightweight .NET NoSQL embedded database.
 - Index document fields for fast search
 - LINQ predicate translation plus a provider-backed `IQueryable<T>` subset for supported query shapes
 - SQL-Like commands to access/transform data
-- [LiteDB Studio](https://github.com/mbdavid/LiteDB.Studio) - Nice UI for data access 
 - Open source and free for everyone - including commercial use
-- Install from NuGet: `Install-Package LiteDB`
+- Install from NuGet: `Install-Package LiteDbX`
 
-
-## New v5
-
-- New storage engine
-- No locks for `read` operations (multiple readers)
-- `Write` locks per collection (multiple writers)
-- Internal/System collections 
-- New `SQL-Like Syntax`
-- New query engine (support projection, sort, filter, query)
-- Partial document load (root level)
-- and much, much more!
-
-## Lite.Studio
-
-New UI to manage and visualize your database:
-
-
-![LiteDB.Studio](https://www.litedb.org/images/banner.gif)
-
+<!--
 ## Documentation
 
-Visit [the Wiki](https://github.com/mbdavid/LiteDB/wiki) for full documentation. For simplified chinese version, [check here](https://github.com/lidanger/LiteDB.wiki_Translation_zh-cn).
+Visit [the Wiki](https://github.com/mbdavid/LiteDB/wiki) for full documentation. For simplified chinese version, [check here](https://github.com/lidanger/LiteDB.wiki_Translation_zh-cn).-->
 
-## LiteDB Community
 
-Help LiteDB grow its user community by answering this [simple survey](https://docs.google.com/forms/d/e/1FAIpQLSc4cNG7wyLKXXcOLIt7Ea4TlXCG6s-51_EfHPu2p5WZ2dIx7A/viewform?usp=sf_link)
-
-## How to use LiteDB
+## How to use LiteDbX
 
 A quick example for storing and searching documents:
 
-```C#
+```csharp
 // Create your POCO class
 public class Customer
 {
@@ -84,24 +71,24 @@ using(var db = new LiteDatabase(@"MyData.db"))
     };
 
     // Create unique index in Name field
-    col.EnsureIndex(x => x.Name, true);
+    await col.EnsureIndex(x => x.Name, true);
 
     // Insert new customer document (Id will be auto-incremented)
-    col.Insert(customer);
+    await col.Insert(customer);
 
     // Update a document inside a collection
     customer.Name = "Joana Doe";
 
-    col.Update(customer);
+    await col.Update(customer);
 
     // Use a predicate expression to query documents
-    var results = col.Find(x => x.Age > 20);
+    var results = await col.Find(x => x.Age > 20);
 }
 ```
 
 Using fluent mapper and cross document reference for more complex data models
 
-```C#
+```csharp
 // DbRef to cross references
 public class Order
 {
@@ -126,7 +113,7 @@ using(var db = new LiteDatabase("MyOrderDatafile.db"))
     var orders = db.GetCollection<Order>("orders");
         
     // When query Order, includes references
-    var query = orders
+    var query = await orders
         .Include(x => x.Customer)
         .Include(x => x.Products) // 1 to many reference
         .Find(x => x.OrderDate <= DateTime.Now);
@@ -233,41 +220,6 @@ Supported grouped LINQ is intentionally **narrow** and engine-aligned:
   - `Select(g => new { g.Key, Count = g.Count() })`
   - `Select(g => new { g.Key, Sum = g.Sum(x => x.SomeField) })`
 
-### Unsupported or deferred LINQ shapes
-
-Use `collection.Query()` instead for shapes such as:
-
-- `Join`
-- `GroupJoin`
-- `SelectMany`
-- set operators (`Union`, `Intersect`, `Except`)
-- nested queryable subqueries
-- raw `IGrouping<TKey, TElement>` materialization
-- nested grouped composition / grouped element projection
-- advanced/manual grouped queries beyond grouped aggregate projections
-
-### Native `Query()` remains the advanced escape hatch
-
-For full control, use the native query builder directly:
-
-```csharp
-var rows = await customers.Query()
-    .Where(x => x.IsActive)
-    .OrderBy(x => x.Name)
-    .Select(x => new { x.Id, x.Name })
-    .ToArray();
-```
-
-For grouped/manual queries, prefer the native builder explicitly:
-
-```csharp
-var grouped = await customers.Query()
-    .GroupBy(BsonExpression.Create("$.Age"))
-    .Having(BsonExpression.Create("COUNT(*._id) >= 2"))
-    .Select(BsonExpression.Create("{ Age: @key, Count: COUNT(*._id) }"))
-    .ToArray();
-```
-
 ### Debugging translated LINQ queries
 
 Use `GetPlanAsync()` to inspect how a provider-backed query will execute:
@@ -281,14 +233,6 @@ var plan = await customers
     .GetPlanAsync();
 ```
 
-### Rollout / support guidance
-
-- `Query()` remains the primary native query API
-- `LiteRepository` remains centered on native `Query<T>()`; repository-level LINQ convenience is intentionally deferred
-- `AsQueryable()` is additive and production-oriented for the documented supported subset
-- grouped LINQ should be understood as a conservative subset, not full `IGrouping<TKey, TElement>` parity
-- unsupported LINQ patterns are expected to fail clearly and point callers back to `Query()`
-
 ## Where to use?
 
 - Desktop/local small applications
@@ -298,26 +242,12 @@ var plan = await customers
 
 ## Plugins
 
-- A GUI viewer tool: https://github.com/falahati/LiteDBViewer (v4)
-- A GUI editor tool: https://github.com/JosefNemec/LiteDbExplorer (v4)
+Currently these plugins are targetting LiteDB, but will be forked to support LiteDbX in time:
+
 - Lucene.NET directory: https://github.com/sheryever/LiteDBDirectory
 - LINQPad support: https://github.com/adospace/litedbpad
-- F# Support: https://github.com/Zaid-Ajaj/LiteDB.FSharp (v4)
-- UltraLiteDB (for Unity or IOT): https://github.com/rejemy/UltraLiteDB
 - OneBella - cross platform (windows, macos, linux) GUI tool : https://github.com/namigop/OneBella
 - LiteDB.Migration: Framework that makes schema migrations easier: https://github.com/JKamsker/LiteDB.Migration/
-
-## Changelog
-
-Change details for each release are documented in the [release notes](https://github.com/mbdavid/LiteDB/releases).
-
-## Code Signing
-
-LiteDB is digitally signed courtesy of [SignPath](https://www.signpath.io)
-
-<a href="https://www.signpath.io">
-    <img src="https://about.signpath.io/assets/signpath-logo.svg" width="150">
-</a>
 
 ## License
 
