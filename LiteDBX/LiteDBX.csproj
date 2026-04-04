@@ -16,7 +16,7 @@
         <PackageTags>database nosql embedded</PackageTags>
         <PackageIcon>icon_64x64.png</PackageIcon>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
-        <PackageProjectUrl>https://www.litedb.org</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/surgicalcoder/LiteDbX</PackageProjectUrl>
         <RepositoryUrl>https://github.com/surgicalcoder/LiteDbX</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <RootNamespace>LiteDbX</RootNamespace>
