@@ -41,45 +41,27 @@ runs:
 
         "tag=$tag" >> $env:GITHUB_OUTPUT
 
-    - name: Get commits
-      id: history
-      shell: pwsh
-      run: |
-        $last = "${{ steps.tag.outputs.tag }}"
-
-        if ($last -eq "v1.0.0") {
-          $log = git log --pretty=format:%s
-        } else {
-          $log = git log "$last..HEAD" --pretty=format:%s
-        }
-
-        $logText = $log -join "`n"
-
-        "log<<EOF" >> $env:GITHUB_OUTPUT
-        $logText >> $env:GITHUB_OUTPUT
-        "EOF" >> $env:GITHUB_OUTPUT
-
     - name: Determine bump
       id: bump
       shell: pwsh
       run: |
-        $log = "${{ steps.history.outputs.log }}"
-        $bump = "patch"
+        $last = "${{ steps.tag.outputs.tag }}"
+        $noTag = "${{ steps.tag.outputs.no_tag }}" -eq "true"
 
-        if ($log -match "BREAKING CHANGE") {
-          $bump = "major"
+        if ($noTag) {
+          $commits = @(git log --pretty=format:%s -n 50)
+        } else {
+          $commits = @(git log "$last..HEAD" --pretty=format:%s)
         }
-        elseif ($log -match "^[a-z]+(\(.+\))?!:") {
-          $bump = "major"
-        }
-        elseif ($log -match "^major") {
-          $bump = "major"
-        }
-        elseif ($log -match "^feat") {
-          $bump = "minor"
-        }
-        elseif ($log -match "^minor") {
-          $bump = "minor"
+
+        $bump = "patch"
+        foreach ($line in $commits) {
+          if ($line -match "BREAKING CHANGE")       { $bump = "major"; break }
+          if ($line -match "^[a-z]+(\(.+\))?!:")    { $bump = "major"; break }
+          if ($line -match "^major")                { $bump = "major"; break }
+          if ($line -match "^feat|^minor") {
+            if ($bump -ne "major") { $bump = "minor" }
+          }
         }
 
         "bump=$bump" >> $env:GITHUB_OUTPUT
@@ -128,11 +110,11 @@ runs:
         $content += ""
 
         if ($noTag) {
-          $content += "First release — please check git log for full details."
+          $content += "First release - please check git log for full details."
         } else {
           $previousTag = "${{ steps.tag.outputs.tag }}"
-          $log = git log "$previousTag..HEAD" --pretty=format:%s
-          $content += $log
+          $commits = @(git log "$previousTag..HEAD" --pretty=format:%s -n 50)
+          $content += $commits
         }
 
         $content | Out-File CHANGELOG.md -Encoding utf8
