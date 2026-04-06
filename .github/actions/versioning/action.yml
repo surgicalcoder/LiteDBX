@@ -29,9 +29,9 @@ runs:
       id: tag
       shell: pwsh
       run: |
-        try {
-          $tag = git describe --tags --abbrev=0
-        } catch {
+        $tag = git describe --tags --abbrev=0 2>$null
+
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
           $tag = "v1.0.0"
         }
 
