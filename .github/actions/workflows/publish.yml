@@ -1,8 +1,7 @@
 name: Build & Publish
 
 on:
-  push:
-    branches: [ main, develop ]
+  workflow_dispatch:
 
 env:
   DOTNET_VERSION: '10.0.x'
