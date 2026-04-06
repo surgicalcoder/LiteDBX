@@ -29,19 +29,17 @@ runs:
       id: tag
       shell: pwsh
       run: |
-        $previousNativeCommandBehavior = $PSNativeCommandUseErrorActionPreference
         $PSNativeCommandUseErrorActionPreference = $false
 
         $tag = git describe --tags --abbrev=0 2>$null
-        $describeExitCode = $LASTEXITCODE
+        $noTag = $LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)
 
-        $PSNativeCommandUseErrorActionPreference = $previousNativeCommandBehavior
-
-        if ($describeExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
+        if ($noTag) {
           $tag = "v1.0.0"
         }
 
         "tag=$tag" >> $env:GITHUB_OUTPUT
+        "no_tag=$($noTag.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
     - name: Get commits
       id: history
@@ -123,12 +121,18 @@ runs:
       run: |
         $version = "${{ steps.version.outputs.version }}"
         $date = Get-Date -Format "yyyy-MM-dd"
-
-        $log = git log -20 --pretty=format:%s
+        $noTag = "${{ steps.tag.outputs.no_tag }}" -eq "true"
 
         $content = @()
         $content += "## v$version ($date)"
         $content += ""
-        $content += $log
+
+        if ($noTag) {
+          $content += "First release — please check git log for full details."
+        } else {
+          $previousTag = "${{ steps.tag.outputs.tag }}"
+          $log = git log "$previousTag..HEAD" --pretty=format:%s
+          $content += $log
+        }
 
         $content | Out-File CHANGELOG.md -Encoding utf8
