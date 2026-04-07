@@ -45,7 +45,7 @@ jobs:
         id: pre
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -eq "refs/heads/main") {
+          if ($env:GITHUB_REF -eq "refs/heads/main" -or $env:GITHUB_REF -eq "refs/heads/master") {
             "type=" >> $env:GITHUB_OUTPUT
           }
           elseif ($env:GITHUB_REF -eq "refs/heads/develop") {
@@ -73,9 +73,11 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          $assemblyVersion = "${{ steps.version.outputs.version }}" -replace '-.*$', ''
           dotnet build `
             -c Release `
-            -p:Version=${{ steps.version.outputs.version }}
+            -p:Version=$assemblyVersion `
+            -p:InformationalVersion=${{ steps.version.outputs.version }}
 
       # -------------------------
       # Find packable projects
