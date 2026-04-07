@@ -342,24 +342,6 @@ Additional notes:
 If you need explicit transaction scopes, prefer `Direct`.
 If you need cross-process file coordination, prefer `LockFile` rather than assuming `Shared` provides the old named-mutex behavior.
 
-## Project status and design docs
-
-The repository contains detailed handoff and decision docs for the async redesign that produced the current API shape.
-
-Recommended starting points:
-
-- `docs/async-redesign/README.md` — phase-by-phase async redesign index
-- `docs/ASYNC_ONLY_REDESIGN_PLAN.md` — high-level redesign plan
-- `docs/gcm-setup.md` — practical GCM setup steps
-- `docs/aes-gcm-mode.md` — implementation-focused GCM format notes
-- `docs/INHERITED_BSONMAPPER_CONVENTIONS_PLAN.md` — mapper convention design work
-
-Important implementation notes and remaining behavioral boundaries tracked in those docs include:
-
-- `await LiteDatabase.Open(...)`, `await LiteRepository.Open(...)`, and `await LiteEngine.Open(...)` are the supported lifecycle entry points
-- shared/lock-file modes are intentionally limited relative to direct mode, especially around explicit transaction scope
-- provider-backed LINQ is intentionally a supported subset, not a full general-purpose LINQ provider
-
 ## Good fit for
 
 - desktop and local applications
