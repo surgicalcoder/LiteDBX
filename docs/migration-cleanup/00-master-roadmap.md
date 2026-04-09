@@ -11,6 +11,8 @@ The first two concrete migration scenarios are:
 
 The design must also leave room for nested-field cleanup and additional predicate-driven maintenance.
 
+It should also support conditional field enrichment and transformation, not only removal and type conversion.
+
 It must also support applying the same migration definition to one collection, many collections, or collection-name patterns.
 
 ---
@@ -112,7 +114,9 @@ await db.Migrations()
     .Migration("2026-04-09-remove-empty-fields", m => m
         .ForCollection("*_settings", c => c
             .RemoveFieldWhen("Tags", BsonPredicates.EmptyArray)
-            .RemoveFieldWhen("Notes", BsonPredicates.EmptyString)))
+            .RemoveFieldWhen("Notes", BsonPredicates.EmptyString)
+            .AddFieldWhen("Metadata.Source", ctx => new BsonValue("migration"), when: BsonPredicates.Missing)
+            .ModifyFieldWhen("DisplayName", ctx => new BsonValue(ctx.Value.AsString.Trim()), when: BsonPredicates.IsString)))
     .RunAsync();
 ```
 
@@ -125,9 +129,13 @@ ForCollection("tenant_*")
 ConvertId().FromStringToObjectId()
 ConvertField("CustomerId").FromStringToObjectId()
 RemoveFieldWhen("Tags", BsonPredicates.EmptyArray)
+AddFieldWhen("Metadata.Source", ctx => new BsonValue("migration"), when: BsonPredicates.Missing)
+ModifyFieldWhen("Name", ctx => new BsonValue(ctx.Value.AsString.Trim()), when: BsonPredicates.IsString)
 RemoveFieldWhen("Path.To.Field", BsonPredicates.WhiteSpaceString)
 RemoveFieldWhen("Flags.Legacy", BsonPredicates.Default(BsonValue.False))
 ```
+
+See [`04-mutation-primitives.md`](./04-mutation-primitives.md) for the detailed design of these field mutation operations and related recommended APIs.
 
 ---
 
@@ -146,6 +154,8 @@ RemoveFieldWhen("Flags.Legacy", BsonPredicates.Default(BsonValue.False))
 - `Steps/ConvertFieldTypeStep.cs`
 - `Steps/ConvertIdStep.cs`
 - `Steps/RemoveFieldWhenStep.cs`
+- `Steps/AddFieldWhenStep.cs`
+- `Steps/ModifyFieldWhenStep.cs`
 - `Execution/InPlaceMigrationExecutor.cs`
 - `Execution/RebuildMigrationExecutor.cs`
 - `Execution/BsonPathNavigator.cs`
@@ -205,6 +215,24 @@ RemoveFieldWhen("Flags.Legacy", BsonPredicates.Default(BsonValue.False))
 3. if predicate matches, remove field
 4. if removal leaves empty parent documents and configured pruning allows it, prune parents
 5. update document in place
+
+## D. Add fields by predicate and value factory
+
+1. stream raw documents
+2. locate the target field/path
+3. evaluate the `when` predicate against shared mutation context
+4. if predicate matches and target does not already exist, compute the new value
+5. add only the targeted field
+6. update document in place
+
+## E. Modify fields by predicate and mutator
+
+1. stream raw documents
+2. locate the target field/path
+3. if field exists and predicate matches, compute the replacement value
+4. replace only the targeted field
+5. preserve all unrelated fields
+6. update document in place
 
 ---
 
@@ -307,6 +335,24 @@ Minimum useful built-ins:
 - `UselessValue`
 - combinators: `And`, `Or`, `Not`, `AnyOf`
 
+Predicates should also be reusable for add and modify operations, not only removal.
+
+---
+
+## Additional mutation primitives recommended
+
+Beyond `RemoveFieldWhen(...)`, `AddFieldWhen(...)`, and `ModifyFieldWhen(...)`, the most useful next operations are:
+
+- `SetFieldWhen(...)` for explicit overwrite semantics
+- `RenameField(...)`
+- `CopyField(...)`
+- `MoveField(...)`
+- `SetDefaultWhenMissing(...)`
+- `RemoveDocumentWhen(...)`
+- later: `ModifyDocumentWhen(...)` as a broader escape hatch
+
+Recommended rule: keep `AddFieldWhen(...)` non-overwriting by default and reserve overwrite behavior for `SetFieldWhen(...)` or an explicit option.
+
 ---
 
 ## Index handling requirements
@@ -399,6 +445,8 @@ Deliver:
 
 - `ConvertField(...).FromStringToObjectId()`
 - `RemoveFieldWhen(...)`
+- `AddFieldWhen(...)`
+- `ModifyFieldWhen(...)`
 - `BsonPredicates` initial catalog
 - top-level field support
 - dotted nested-document path support (v1)
@@ -421,7 +469,7 @@ Deliver:
 - array index traversal
 - wildcard/recursive options
 - parent pruning after child removal
-- richer cleanup passes
+- richer cleanup and mutation passes
 
 ## Stage 5 - polish and UX
 
@@ -429,6 +477,7 @@ Deliver:
 
 - dry-run reporting
 - progress callbacks
+- higher-level mutation helpers such as `RenameField`, `CopyField`, `MoveField`, and `SetDefaultWhenMissing`
 - optional shell integration or sample host
 - end-to-end docs and examples
 
@@ -451,6 +500,13 @@ Deliver:
 - nested document field converts in v1
 - invalid field string honors selected policy
 - already-correct `ObjectId` field is a no-op
+
+### Field mutation primitives
+
+- `AddFieldWhen(...)` adds only when predicate matches and target is absent
+- `ModifyFieldWhen(...)` updates only the targeted field and preserves all others
+- non-overwriting add semantics remain idempotent across reruns
+- nested document add/modify operations work in v1 for dotted document paths
 
 ### Cleanup predicates
 

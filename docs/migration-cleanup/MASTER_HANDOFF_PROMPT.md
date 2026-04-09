@@ -13,6 +13,7 @@ Your task is to implement a new migration package called `LiteDbX.Migrations` an
 - `docs/migration-cleanup/01-invalid-objectid-policy.md`
 - `docs/migration-cleanup/02-nested-paths-and-array-cleanup.md`
 - `docs/migration-cleanup/03-bson-predicates-catalog.md`
+- `docs/migration-cleanup/04-mutation-primitives.md`
 
 ## Context
 
@@ -37,12 +38,15 @@ The migration framework must allow raw-document repair without typed entity dese
    - `ConvertId().FromStringToObjectId()`
 8. Implement predicate-driven cleanup:
    - `RemoveFieldWhen(path, predicate)`
-9. Implement a reusable `BsonPredicates` helper catalog
-10. Support nested paths in stages:
+9. Implement conditional field enrichment and mutation primitives:
+   - `AddFieldWhen(path, factory, when)`
+   - `ModifyFieldWhen(path, mutator, when)`
+10. Implement a reusable `BsonPredicates` helper catalog
+11. Support nested paths in stages:
    - V1: top-level plus dotted nested document paths only
    - V2-ready internal design for arrays and wildcards
-11. Add migration journaling and reporting
-12. Test thoroughly
+12. Add migration journaling and reporting
+13. Test thoroughly
 
 ## Critical constraints
 
@@ -53,6 +57,7 @@ The migration framework must allow raw-document repair without typed entity dese
 - Recreate secondary indexes during rebuild mode
 - Support `InvalidObjectIdPolicy.GenerateNewId`
 - Persist durable old->new `_id` remap records for every generated replacement id
+- Make add/modify operations path-aware, idempotent, and non-destructive by default
 - Do not leave the collection in a broken state
 - Be idempotent where possible
 - Prefer smallest repo-consistent changes
@@ -69,6 +74,7 @@ Design around types such as:
 - `CollectionMigrationBuilder`
 - `InvalidObjectIdPolicy`
 - `BsonPredicates`
+- a shared mutation context/value-factory model for add/modify operations
 - path traversal helper such as `BsonPathNavigator`
 
 ## `InvalidObjectIdPolicy`
@@ -156,6 +162,8 @@ At minimum, implement these built-ins:
 - `StructurallyEmpty`
 - combinators: `And`, `Or`, `Not`
 
+Predicates must be reusable across remove, add, and modify operations.
+
 ## Migration behavior requirements
 
 ### In-place field conversion
@@ -183,6 +191,20 @@ At minimum, implement these built-ins:
 - support nested dotted paths in V1
 - optionally prune empty parent containers after removal
 
+### Add field
+
+- add targeted field if predicate matches
+- compute value from shared mutation context
+- do not overwrite existing field by default
+- for nested paths in V1, only succeed when parent documents already exist
+
+### Modify field
+
+- modify targeted field if it exists and predicate matches
+- compute replacement value from shared mutation context
+- preserve all unrelated fields
+- no-op when path is missing in V1
+
 ## Suggested implementation order
 
 ### Stage 1 - scaffolding
@@ -194,6 +216,7 @@ Deliver:
 - base migration runner types
 - migration journal types
 - collection selector abstraction and expansion/reporting
+- shared mutation context/value-factory abstractions
 - initial docs/comments as needed
 
 Stop and verify:
@@ -209,11 +232,14 @@ Deliver:
 - `BsonPredicates`
 - `RemoveFieldWhenStep`
 - `ConvertFieldTypeStep`
+- `AddFieldWhenStep`
+- `ModifyFieldWhenStep`
 
 Stop and verify:
 
 - tests for top-level and nested paths
 - tests for empty arrays, empty strings, and default cleanup
+- tests for add/modify semantics and non-overwrite behavior
 
 ### Stage 3 - rebuild `_id` migration
 
@@ -240,6 +266,7 @@ Deliver:
 - dry-run support if feasible
 - old->new id mapping report
 - idempotency verification
+- roadmap for next helper operations such as `SetFieldWhen`, `RenameField`, `CopyField`, `MoveField`, and `SetDefaultWhenMissing`
 
 Stop and verify:
 
@@ -258,7 +285,10 @@ Required cases include:
 - invalid string `_id` + `Fail` aborts safely
 - non-id field converts while all unrelated fields remain untouched
 - empty arrays and empty strings are removed correctly
+- `AddFieldWhen(...)` adds only when predicate matches and target is absent
+- `ModifyFieldWhen(...)` modifies only the targeted field and preserves all others
 - dotted nested path cleanup works
+- dotted nested path add/modify works in V1 when parent documents exist
 - parent pruning works when enabled
 - rerunning completed migration is safe
 - `ForCollection("*")` excludes system and migration infrastructure collections by default
@@ -270,6 +300,7 @@ Required cases include:
 - Reuse existing index metadata/query facilities where possible
 - Avoid typed mapper deserialization in migration execution paths
 - Keep public API clean and fluent
+- Keep `AddFieldWhen(...)` non-overwriting by default; use a separate `SetFieldWhen(...)` or explicit overwrite option for replacement semantics
 - Prefer a library-first implementation over a CLI-first implementation
 
 ## Deliverable format

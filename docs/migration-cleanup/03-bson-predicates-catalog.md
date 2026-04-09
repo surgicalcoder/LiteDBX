@@ -8,6 +8,8 @@ The predicate catalog should support:
 
 - direct field cleanup
 - nested-field cleanup
+- conditional add operations
+- conditional modify operations
 - future recursive cleanup passes
 - composition through `And`, `Or`, and `Not`
 
@@ -23,6 +25,8 @@ Callers should be able to write:
 .RemoveFieldWhen("Tags", BsonPredicates.EmptyArray)
 .RemoveFieldWhen("Notes", BsonPredicates.EmptyString)
 .RemoveFieldWhen("Legacy.IsDeleted", BsonPredicates.FalseBoolean)
+.AddFieldWhen("Metadata.Source", ctx => new BsonValue("migration"), when: BsonPredicates.Missing)
+.ModifyFieldWhen("DisplayName", ctx => new BsonValue(ctx.Value.AsString.Trim()), when: BsonPredicates.IsString)
 ```
 
 ### 2. Composable building blocks
@@ -41,6 +45,12 @@ Some conditions need document context rather than a raw value alone, especially 
 
 - value predicates
 - path/document-aware wrappers
+
+The same predicate surface should drive:
+
+- `RemoveFieldWhen(...)`
+- `AddFieldWhen(...)`
+- `ModifyFieldWhen(...)`
 
 ---
 
@@ -81,6 +91,8 @@ Matches BSON null.
 
 ### `Missing`
 Matches absent field/path in context-aware execution.
+
+Especially useful for `AddFieldWhen(...)` and `SetDefaultWhenMissing(...)`.
 
 ### `NullOrMissing`
 Useful for cleanup passes or optional field removal.
@@ -251,6 +263,11 @@ The following set is the minimum recommended initial implementation:
 - `And`
 - `Or`
 - `Not`
+
+These are sufficient not only for cleanup but also for the first add/modify operations. In particular:
+
+- `Missing` and `NullOrMissing` are central to `AddFieldWhen(...)`
+- `IsString`, `WhiteSpaceString`, and `Default(...)` are central to `ModifyFieldWhen(...)`
 
 ---
 

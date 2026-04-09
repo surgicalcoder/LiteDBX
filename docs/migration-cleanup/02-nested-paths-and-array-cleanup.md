@@ -11,6 +11,8 @@ The migration framework should reuse one shared path-navigation layer for:
 - converting nested fields from `string` to `ObjectId`
 - removing nested empty arrays
 - removing nested empty strings, default values, and other predicate matches
+- adding derived/default fields into nested documents
+- modifying nested fields in place without rewriting sibling content
 - optional pruning of now-empty parent containers
 
 ---
@@ -29,6 +31,8 @@ That path layer should be shared by:
 
 - `ConvertFieldTypeStep`
 - `RemoveFieldWhenStep`
+- `AddFieldWhenStep`
+- `ModifyFieldWhenStep`
 - future recursive cleanup passes
 
 ---
@@ -78,6 +82,20 @@ For conversion operations:
 - do not create missing parents
 - do not rewrite sibling content
 
+For add operations:
+
+- add only the targeted field
+- do not overwrite an existing field by default
+- do not create missing parent documents in v1
+- if the parent path is missing or not a document, treat as no-op
+
+For modify operations:
+
+- replace only the targeted field
+- if the field is missing, treat as no-op by default
+- do not create missing parents
+- do not rewrite sibling content
+
 ---
 
 ## V2 scope
@@ -106,6 +124,8 @@ If a child field is removed and its parent becomes empty:
 - optionally remove the empty parent document
 - optionally remove empty arrays discovered during recursive traversal
 - optionally keep containers if the caller disables pruning
+
+V2 can also add optional parent auto-creation for nested add/set operations, but that should not be the default in v1.
 
 ---
 
@@ -169,6 +189,7 @@ Mutation helpers might look like:
 ```csharp
 BsonPathNavigator.TryReplace(document, path, newValue, out var changed);
 BsonPathNavigator.TryRemove(document, path, pruneEmptyParents: true, out var changed);
+BsonPathNavigator.TryAdd(document, path, newValue, overwrite: false, out var changed);
 ```
 
 ---
@@ -210,6 +231,7 @@ Path traversal should not throw for mixed document shapes unless explicitly conf
 - missing path => no-op
 - intermediate scalar where document expected => no-op and record mismatch count
 - intermediate array in V1 => no-op and record unsupported-path-shape count
+- add-to-existing-target in non-overwrite mode => no-op and record skipped-existing-target count
 
 ### Strict mode option
 
