@@ -2,6 +2,8 @@
     <Project Path="LiteDbX.Benchmarks\LiteDbX.Benchmarks.csproj"/>
     <Project Path="LiteDbX.Encryption.Gcm\LiteDbX.Encryption.Gcm.csproj"/>
     <Project Path="LiteDbX.Encryption.Gcm.Tests\LiteDbX.Encryption.Gcm.Tests.csproj"/>
+    <Project Path="LiteDbX.Migrations\LiteDbX.Migrations.csproj"/>
+    <Project Path="LiteDbX.Migrations.Tests\LiteDbX.Migrations.Tests.csproj"/>
     <Project Path="LiteDBX.Shell\LiteDBX.Shell.csproj"/>
     <Project Path="LiteDBX.Stress\LiteDBX.Stress.csproj"/>
     <Project Path="LiteDBX.Tests\LiteDBX.Tests.csproj"/>
