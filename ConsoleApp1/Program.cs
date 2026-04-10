@@ -150,10 +150,9 @@ static async Task RunMigrationsDemoAsync()
         }
     });
 
-    Action<MigrationProgress> progressCallback = progress =>
-        Console.WriteLine($"[{progress.Stage}] migration={progress.MigrationName}, collection={progress.CollectionName ?? "-"}, scanned={progress.DocumentsScanned}, modified={progress.DocumentsModified}, inserted={progress.DocumentsInserted}");
-
     var report = await db.Migrations()
+        .OnProgress(progress =>
+            Console.WriteLine($"[{progress.Stage}] migration={progress.MigrationName}, collection={progress.CollectionName ?? "-"}, scanned={progress.DocumentsScanned}, modified={progress.DocumentsModified}, inserted={progress.DocumentsInserted}"))
         .Migration("demo-cleanup", m => m.ForCollection("customers", c =>
         {
             c.ModifyFieldWhen("Name", ctx => new BsonValue(ctx.Value.AsString.Trim()), BsonPredicates.IsString);
@@ -164,7 +163,7 @@ static async Task RunMigrationsDemoAsync()
                 ["Name"] = new BsonValue("Seeded")
             });
         }))
-        .RunAsync(new MigrationRunOptions { StrictPathResolution = true, ProgressCallback = progressCallback });
+        .RunAsync(new MigrationRunOptions { StrictPathResolution = true });
 
     Console.WriteLine($"Inserted by migration: {report.Migrations[0].DocumentsInserted}");
 

@@ -11,7 +11,7 @@ This folder contains the implementation plan for a new `LiteDbX.Migrations` proj
 - support both top-level and nested-field cleanup over time
 - provide a fluent, journaled migration runner that operates on raw `BsonDocument` values so unaffected data is preserved exactly
 
-This pack is intended as a handoff bundle for staged implementation.
+This pack started as a staged implementation handoff bundle and now also serves as a status/reference pack for the shipped `LiteDbX.Migrations` surface.
 
 ## Why this needs its own project
 
@@ -34,6 +34,7 @@ is happening during typed mapper deserialization. That means the migration layer
 - reusable cleanup predicate catalog
 - reusable field mutation primitives
 - staged support for nested field traversal
+- operator-focused execution controls such as dry-run preview, strict path resolution, progress callbacks, and backup lifecycle helpers
 
 ## Document index
 

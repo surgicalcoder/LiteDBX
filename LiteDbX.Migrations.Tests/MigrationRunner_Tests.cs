@@ -1820,6 +1820,31 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task RunAsync_WithExplicitOptions_ShouldPreserveRunnerDefaultBackupRetention_WhenNotOverridden()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("bad-customer-id"),
+            ["Name"] = new BsonValue("Alice")
+        });
+
+        var report = await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .WithBackupRetention(BackupRetentionPolicy.DeleteOnSuccess)
+            .RunAsync(new MigrationRunOptions { DryRun = false });
+
+        var collectionNames = await GetCollectionNamesAsync(db);
+        var collectionReport = report.Migrations[0].Selectors[0].Collections[0];
+
+        collectionNames.Should().NotContain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
+        collectionReport.BackupDisposition.Should().Be(BackupDisposition.Deleted);
+    }
+
+    [Fact]
     public async Task CleanupBackupsAsync_ShouldDeleteMatchingBackupsOnly()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -2054,6 +2079,28 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task RunAsync_WithExplicitOptions_ShouldPreserveRunnerDefaultStrictPathResolution_WhenNotOverridden()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Profile"] = new BsonValue("not-a-document")
+        });
+
+        Func<Task> action = async () => await db.Migrations()
+            .UseStrictPathResolution()
+            .Migration("strict-defaults", m => m.ForCollection("tenant_*", c =>
+                c.SetFieldWhen("Profile.Name", new BsonValue("Alice"), BsonPredicates.Always)))
+            .RunAsync(new MigrationRunOptions());
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Profile.Name*");
+    }
+
+    [Fact]
     public async Task RunAsync_ShouldEmitProgressCallbacks()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -2078,6 +2125,29 @@ public class MigrationRunner_Tests
         progress.Should().Contain(x => x.Stage == MigrationProgressStage.CollectionStarted && x.CollectionName == "tenant_one");
         progress.Should().Contain(x => x.Stage == MigrationProgressStage.CollectionCompleted && x.CollectionName == "tenant_one" && x.DocumentsModified == 1);
         progress.Should().Contain(x => x.Stage == MigrationProgressStage.MigrationCompleted && x.MigrationName == "progress-demo" && x.DocumentsModified == 1);
+        report.Migrations[0].DocumentsModified.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithExplicitOptions_ShouldPreserveRunnerDefaultProgressCallback_WhenNotOverridden()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+        var progress = new List<MigrationProgress>();
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Metadata"] = new BsonDocument()
+        });
+
+        var report = await db.Migrations()
+            .OnProgress(value => progress.Add(value))
+            .Migration("progress-defaults", m => m.ForCollection("tenant_*", c =>
+                c.SetDefaultWhenMissing("Metadata.Source", new BsonValue("migration"))))
+            .RunAsync(new MigrationRunOptions { DryRun = false });
+
+        progress.Should().Contain(x => x.Stage == MigrationProgressStage.MigrationCompleted && x.MigrationName == "progress-defaults");
         report.Migrations[0].DocumentsModified.Should().Be(1);
     }
 

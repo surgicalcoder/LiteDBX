@@ -318,8 +318,9 @@ Current baseline note:
 - fixed `[index]` traversal is implemented
 - `[*]` traversal is implemented for field mutation/conversion operations over existing array matches
 - paired wildcard `RepairReference(...)` is implemented for sibling-bound paths such as `Orders[*].Customer.$id` + `Orders[*].Customer.$ref`
-- recursive descent such as `**.LegacyId` is implemented for existing-target remove/modify/convert operations
-- broader recursive/wildcard multi-target transfer and add/set semantics still remain for a later slice
+- recursive descent such as `**.LegacyId` is implemented for existing-target remove/modify/convert operations and recursive add/set context expansion
+- paired wildcard `RenameField(...)`, `CopyField(...)`, and `MoveField(...)` are implemented when source/target paths share the same wildcard topology and parent path
+- recursive `RepairReference(...)` still remains intentionally unsupported
 
 ---
 
@@ -343,7 +344,7 @@ Minimum useful built-ins:
 - `Default(BsonValue value)`
 - `NullLike`
 - `UselessValue`
-- combinators: `And`, `Or`, `Not`, `AnyOf`
+- combinators: `And`, `Or`, `Not`, `AnyOf`, `AllOf`
 
 Predicates should also be reusable for add and modify operations, not only removal.
 
@@ -359,6 +360,7 @@ Beyond `RemoveFieldWhen(...)`, `AddFieldWhen(...)`, and `ModifyFieldWhen(...)`, 
 - `MoveField(...)`
 - `SetDefaultWhenMissing(...)`
 - `RemoveDocumentWhen(...)`
+- `InsertDocumentWhen(...)` for seed/reference data cases
 - later: `ModifyDocumentWhen(...)` as a broader escape hatch
 
 Recommended rule: keep `AddFieldWhen(...)` non-overwriting by default and reserve overwrite behavior for `SetFieldWhen(...)` or an explicit option.
@@ -492,6 +494,8 @@ Deliver:
 - planned secondary-index replay detail reporting for rebuild dry-runs and applied rebuilds
 - keep-latest-N backup cleanup retention for retained rebuild backups
 - progress callbacks
+- strict path resolution via `MigrationRunOptions.StrictPathResolution` and `MigrationRunner.UseStrictPathResolution()`
+- collection-level insert reporting via `DocumentsInserted`
 - higher-level mutation helpers such as `RenameField`, `CopyField`, `MoveField`, and `SetDefaultWhenMissing`
 - optional shell integration or sample host
 - end-to-end docs and examples

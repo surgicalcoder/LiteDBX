@@ -49,6 +49,7 @@ RemoveFieldWhen("Tags", BsonPredicates.EmptyArray)
 ```csharp
 AddFieldWhen("CreatedBy", ctx => new BsonValue("migration"), when: BsonPredicates.Missing)
 ModifyFieldWhen("Name", value => new BsonValue(value.AsString.Trim()), when: BsonPredicates.WhiteSpaceString)
+InsertDocumentWhen(new BsonDocument { ["_id"] = 42, ["Name"] = "seed" })
 ```
 
 ### Recommended refined examples
@@ -129,18 +130,17 @@ or:
 SetFieldWhen("Metadata.Source", ctx => new BsonValue("legacy"), when: BsonPredicates.Missing)
 ```
 
-### Recommended v1 rules
+### Current implementation baseline
 
-- support top-level and dotted nested document paths only
-- do not auto-create missing parent documents unless explicitly enabled later
-- if parent path is missing, no-op by default
-- if parent exists and is a document, add the field
+- supports top-level, dotted nested, indexed, wildcard, and recursive-descent paths
+- `FieldMutationOptions.CreateParents` enables nested parent auto-creation for add/set operations
+- `FieldMutationOptions.WriteMode` supports `MissingOnly`, `ExistingOnly`, `NullOrMissing`, and `Overwrite`
+- if parent path is missing and parent creation is disabled, the operation is a safe no-op by default or a strict-path failure when strict resolution is enabled
 
-### V2 expansion
+### Notes
 
-- optional parent auto-creation for nested paths
-- array path support
-- overwrite modes
+- non-recursive exact-path writes still preserve idempotent no-op behavior when the target already has the desired value
+- recursive add/set works by expanding concrete match contexts and applying the same exact-target write helpers on the resulting paths
 
 ---
 
@@ -238,7 +238,20 @@ Delete whole documents matching a predicate.
 
 Useful for one-off cleanup migrations when field-level mutation is not enough.
 
-### 7. `ModifyDocumentWhen(...)`
+### 7. `InsertDocumentWhen(...)`
+
+Insert a document at collection scope for seed/reference-data cases.
+
+Supported forms now include:
+
+```csharp
+InsertDocumentWhen(new BsonDocument { ["_id"] = 42, ["Name"] = "seed" })
+InsertDocumentWhen(ctx => new BsonDocument { ["_id"] = 42, ["Name"] = ctx.CollectionName })
+```
+
+Default behavior is idempotent by `_id`: if the candidate `_id` already exists, insertion is skipped.
+
+### 8. `ModifyDocumentWhen(...)`
 
 A more advanced escape hatch for full-document transforms once the primitive surface is in place.
 
@@ -261,7 +274,6 @@ This should be added later than path-based operations because it is more powerfu
 ### Medium priority
 
 - `RemoveDocumentWhen(...)`
-- `InsertDocumentWhen(...)` for seed/reference data cases
 - collection-level validation/precondition rules
 
 ### Later / advanced
@@ -312,6 +324,13 @@ Each mutation primitive should be able to produce a preview summary without writ
 - parent auto-creation options
 - recursive mutation passes
 - richer document-level transforms
+
+Current implementation note:
+
+- indexed and wildcard add/set are implemented
+- recursive add/set is implemented
+- paired wildcard `RenameField(...)`, `CopyField(...)`, and `MoveField(...)` are implemented for aligned source/target paths
+- recursive `RepairReference(...)` remains intentionally unsupported
 
 ---
 

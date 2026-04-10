@@ -141,16 +141,17 @@ This keeps the existing single-target mutation model intact while extending the 
 .PruneEmptyContainers()
 ```
 
-At the moment, fixed-index, `[*]`, and a first recursive-descent slice are implemented. Document-wide cleanup passes remain roadmap items.
+At this point, fixed-index, `[*]`, recursive descent, and document-wide cleanup passes are all implemented in the shared navigator/mutation pipeline.
 
 Current implementation note:
 
 - fixed-index paths are implemented
 - `[*]` paths are implemented for field add/set/modify/remove and `ConvertField(...)`
-- `**` paths are implemented for existing-target `RemoveFieldWhen(...)`, `ModifyFieldWhen(...)`, and `ConvertField(...)`
+- `**` paths are implemented for `RemoveFieldWhen(...)`, `ModifyFieldWhen(...)`, `ConvertField(...)`, and recursive add/set context expansion through `AddFieldWhen(...)` / `SetFieldWhen(...)`
 - `RepairReference(...)` supports paired sibling wildcard binding when both paths share the same wildcard topology and parent path
-- `AddFieldWhen(...)`, `SetFieldWhen(...)`, `RenameField(...)`, `CopyField(...)`, `MoveField(...)`, and recursive `RepairReference(...)` remain intentionally unsupported for recursive paths in this slice
-- broader document-wide traversal/reporting remains future work
+- paired wildcard `RenameField(...)`, `CopyField(...)`, and `MoveField(...)` are implemented when source and target paths share the same wildcard topology and parent path
+- recursive `RepairReference(...)` remains intentionally unsupported
+- strict path resolution is now available as an opt-in execution mode via `MigrationRunOptions.StrictPathResolution` or `MigrationRunner.UseStrictPathResolution()`
 
 ### V2 pruning behavior
 

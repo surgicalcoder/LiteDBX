@@ -20,6 +20,9 @@ The current safety slice now includes:
 - duplicate target `_id` preview details for rebuild dry-runs
 - planned secondary-index replay details for rebuild migrations
 - keep-latest-N backup cleanup retention
+- strict path resolution
+- progress callbacks
+- collection-level inserted-document reporting
 - preview/report behavior that helps operators verify a migration before committing it
 
 ---
@@ -46,12 +49,15 @@ At this point the library already supports:
 - backup collection creation during rebuild/swap migrations
 - dry-run execution via `MigrationRunOptions`
 - backup retention policy via `BackupRetentionPolicy`
+- strict path resolution via `MigrationRunOptions.StrictPathResolution` and `MigrationRunner.UseStrictPathResolution()`
+- progress callbacks via `MigrationRunOptions.ProgressCallback` and `MigrationRunner.OnProgress(...)`
 - backup cleanup via `CleanupBackupsAsync(...)`
 - dry-run invalid value counts and sampled preview entries for `ConvertField(...)` and `ConvertId()` ObjectId conversion failures
 - rebuild validation summaries exposing source count, expected/prepared target count, and planned secondary index replay count
 - dry-run duplicate target `_id` counts and capped duplicate samples for rebuild migrations
 - capped planned secondary-index replay descriptors (`Name`, `Expression`, `Unique`) for rebuild reports
 - keep-latest-N pruning via `BackupCleanupOptions.KeepLatestCount`
+- collection-level insert operations and inserted-document counters via `InsertDocumentWhen(...)`, `MigrationExecutionResult.DocumentsInserted`, and `CollectionMigrationResult.DocumentsInserted`
 
 So the most important remaining work is operational control, not more mutation surface.
 
@@ -73,6 +79,8 @@ await db.Migrations()
         BackupRetentionPolicy = BackupRetentionPolicy.KeepAll
     });
 ```
+
+If fluent defaults are configured on the runner first, per-run options now merge over those defaults instead of replacing them wholesale. For example, a runner-level `OnProgress(...)` callback remains active unless a per-run `ProgressCallback` override is explicitly supplied.
 
 ### Optional fluent convenience
 
@@ -116,6 +124,7 @@ In dry-run mode, the normal report counters should be interpreted as “would”
 
 - `DocumentsModified`
 - `DocumentsRemoved`
+- `DocumentsInserted`
 - `GeneratedIdMappings`
 - `RepairedReferences`
 
@@ -124,6 +133,7 @@ The report should also expose:
 - `IsDryRun`
 - planned backup name for rebuild migrations
 - planned backup disposition
+- progress events emitted during selector/migration execution
 - invalid value counts and a capped sample list for ObjectId conversion preview
 - rebuild validation summary with source vs prepared target counts and secondary index replay count
 - duplicate target `_id` counts and capped duplicate samples during rebuild preview

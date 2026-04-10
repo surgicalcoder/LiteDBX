@@ -2,23 +2,116 @@ namespace LiteDbX.Migrations;
 
 public sealed class MigrationRunOptions
 {
-    public bool DryRun { get; set; }
+    private bool _dryRun;
+    private BackupRetentionPolicy _backupRetentionPolicy = BackupRetentionPolicy.KeepAll;
+    private bool _strictPathResolution;
+    private System.Action<MigrationProgress> _progressCallback;
 
-    public BackupRetentionPolicy BackupRetentionPolicy { get; set; } = BackupRetentionPolicy.KeepAll;
+    internal bool HasDryRunSetting { get; private set; }
 
-    public bool StrictPathResolution { get; set; }
+    internal bool HasBackupRetentionPolicySetting { get; private set; }
 
-    public System.Action<MigrationProgress> ProgressCallback { get; set; }
+    internal bool HasStrictPathResolutionSetting { get; private set; }
+
+    internal bool HasProgressCallbackSetting { get; private set; }
+
+    public bool DryRun
+    {
+        get => _dryRun;
+        set
+        {
+            _dryRun = value;
+            HasDryRunSetting = true;
+        }
+    }
+
+    public BackupRetentionPolicy BackupRetentionPolicy
+    {
+        get => _backupRetentionPolicy;
+        set
+        {
+            _backupRetentionPolicy = value;
+            HasBackupRetentionPolicySetting = true;
+        }
+    }
+
+    public bool StrictPathResolution
+    {
+        get => _strictPathResolution;
+        set
+        {
+            _strictPathResolution = value;
+            HasStrictPathResolutionSetting = true;
+        }
+    }
+
+    public System.Action<MigrationProgress> ProgressCallback
+    {
+        get => _progressCallback;
+        set
+        {
+            _progressCallback = value;
+            HasProgressCallbackSetting = true;
+        }
+    }
 
     internal MigrationRunOptions Clone()
     {
-        return new MigrationRunOptions
+        var clone = new MigrationRunOptions();
+
+        if (HasDryRunSetting)
         {
-            DryRun = DryRun,
-            BackupRetentionPolicy = BackupRetentionPolicy,
-            StrictPathResolution = StrictPathResolution,
-            ProgressCallback = ProgressCallback
-        };
+            clone.DryRun = DryRun;
+        }
+
+        if (HasBackupRetentionPolicySetting)
+        {
+            clone.BackupRetentionPolicy = BackupRetentionPolicy;
+        }
+
+        if (HasStrictPathResolutionSetting)
+        {
+            clone.StrictPathResolution = StrictPathResolution;
+        }
+
+        if (HasProgressCallbackSetting)
+        {
+            clone.ProgressCallback = ProgressCallback;
+        }
+
+        return clone;
+    }
+
+    internal static MigrationRunOptions Merge(MigrationRunOptions defaults, MigrationRunOptions overrides)
+    {
+        var merged = defaults?.Clone() ?? new MigrationRunOptions();
+
+        if (overrides == null)
+        {
+            return merged;
+        }
+
+        if (overrides.HasDryRunSetting)
+        {
+            merged.DryRun = overrides.DryRun;
+        }
+
+        if (overrides.HasBackupRetentionPolicySetting)
+        {
+            merged.BackupRetentionPolicy = overrides.BackupRetentionPolicy;
+        }
+
+        if (overrides.HasStrictPathResolutionSetting)
+        {
+            merged.StrictPathResolution = overrides.StrictPathResolution;
+        }
+
+        if (overrides.HasProgressCallbackSetting)
+        {
+            merged.ProgressCallback = overrides.ProgressCallback;
+        }
+
+        return merged;
     }
 }
 

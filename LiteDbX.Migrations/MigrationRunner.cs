@@ -153,7 +153,7 @@ public sealed class MigrationRunner
 
     public async ValueTask<MigrationReport> RunAsync(MigrationRunOptions options, CancellationToken cancellationToken = default)
     {
-        options ??= new MigrationRunOptions();
+        options = MigrationRunOptions.Merge(_defaultRunOptions, options);
 
         var selector = new MigrationCollectionSelector(_journalCollection, _idMappingCollection, _includeSystemCollections);
         var history = new MigrationHistoryStore(_database, _journalCollection);

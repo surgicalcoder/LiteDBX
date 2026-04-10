@@ -234,9 +234,13 @@ BsonPredicates.Not(BsonPredicates.IsObjectId)
 
 Convenience wrapper for multiple `Or` operations.
 
+This is now implemented as a public alias over `Or(...)`.
+
 ### `AllOf`
 
 Convenience wrapper for multiple `And` operations.
+
+This is now implemented as a public alias over `And(...)`.
 
 ---
 
@@ -263,6 +267,8 @@ The following set is the minimum recommended initial implementation:
 - `And`
 - `Or`
 - `Not`
+- `AnyOf`
+- `AllOf`
 
 These are sufficient not only for cleanup but also for the first add/modify operations. In particular:
 
