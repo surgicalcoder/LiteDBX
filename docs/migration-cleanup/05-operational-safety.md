@@ -10,10 +10,11 @@ Add operator-focused execution controls to `LiteDbX.Migrations` now that the lib
 - durable id remap logging
 - reference repair using `__migration_id_mappings`
 
-The next safety slice should focus on:
+The current safety slice now includes:
 
 - dry-run execution
 - backup retention policy
+- backup cleanup helpers
 - preview/report behavior that helps operators verify a migration before committing it
 
 ---
@@ -38,6 +39,9 @@ At this point the library already supports:
 - durable remap logging in `__migration_id_mappings`
 - reference repair from durable remap data
 - backup collection creation during rebuild/swap migrations
+- dry-run execution via `MigrationRunOptions`
+- backup retention policy via `BackupRetentionPolicy`
+- backup cleanup via `CleanupBackupsAsync(...)`
 
 So the most important remaining work is operational control, not more mutation surface.
 
@@ -166,13 +170,13 @@ Already highly valuable for rebuild dry-run and real runs.
 Cap and report a few representative invalid values when previewing.
 
 ### 3. Backup cleanup helper
-A later convenience API such as:
+This is now implemented. Operators can use:
 
 ```csharp
 await db.Migrations().CleanupBackupsAsync("customers");
 ```
 
-would make long-lived backup management easier.
+to prune retained backup collections by collection selector, with optional dry-run preview.
 
 ### 4. Pre-swap validation summary
 Expose source vs shadow counts and index replay intent in the report.
@@ -205,7 +209,7 @@ The mutation surface is now broad enough that operational safety should be treat
 The next priority after this slice should likely be one of:
 
 - V2 path support for arrays and wildcards
-- backup cleanup utilities
 - richer dry-run reporting samples
 - optional shell/CLI integration for operators
+- more advanced backup lifecycle policies such as keep-latest-N or age-based pruning
 

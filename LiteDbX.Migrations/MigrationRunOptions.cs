@@ -30,3 +30,50 @@ public enum BackupDisposition
     Deleted
 }
 
+public sealed class BackupCleanupOptions
+{
+    public bool DryRun { get; set; }
+}
+
+public sealed class BackupCleanupReport
+{
+    internal BackupCleanupReport(System.Collections.Generic.IReadOnlyList<BackupCleanupResult> results)
+    {
+        Results = results;
+    }
+
+    public System.Collections.Generic.IReadOnlyList<BackupCleanupResult> Results { get; }
+
+    public int TotalBackupsFound => Results.Count;
+
+    public int TotalDeleted => System.Linq.Enumerable.Count(Results, x => x.Disposition == BackupCleanupDisposition.Deleted);
+
+    public int TotalPlanned => System.Linq.Enumerable.Count(Results, x => x.Disposition == BackupCleanupDisposition.Planned);
+}
+
+public sealed class BackupCleanupResult
+{
+    internal BackupCleanupResult(string sourceCollection, string backupCollection, string runIdSuffix, BackupCleanupDisposition disposition)
+    {
+        SourceCollection = sourceCollection;
+        BackupCollection = backupCollection;
+        RunIdSuffix = runIdSuffix;
+        Disposition = disposition;
+    }
+
+    public string SourceCollection { get; }
+
+    public string BackupCollection { get; }
+
+    public string RunIdSuffix { get; }
+
+    public BackupCleanupDisposition Disposition { get; }
+}
+
+public enum BackupCleanupDisposition
+{
+    None,
+    Planned,
+    Deleted
+}
+

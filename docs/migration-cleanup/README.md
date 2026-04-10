@@ -42,7 +42,7 @@ is happening during typed mapper deserialization. That means the migration layer
 3. [`02-nested-paths-and-array-cleanup.md`](./02-nested-paths-and-array-cleanup.md) - v1 and v2 path traversal and nested cleanup scope; distinct from collection-name wildcards in `ForCollection(...)`
 4. [`03-bson-predicates-catalog.md`](./03-bson-predicates-catalog.md) - proposed `BsonPredicates` catalog and composition rules
 5. [`04-mutation-primitives.md`](./04-mutation-primitives.md) - design for `AddFieldWhen(...)`, `ModifyFieldWhen(...)`, and other core mutation operations
-6. [`05-operational-safety.md`](./05-operational-safety.md) - dry-run execution, backup retention policy, and migration operator safety features
+6. [`05-operational-safety.md`](./05-operational-safety.md) - dry-run execution, backup retention policy, backup cleanup helpers, and migration operator safety features
 7. [`MASTER_HANDOFF_PROMPT.md`](./MASTER_HANDOFF_PROMPT.md) - full prompt for another LLM to implement this in stages
 
 ## Related context

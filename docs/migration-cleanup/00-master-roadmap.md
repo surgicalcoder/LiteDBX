@@ -15,7 +15,7 @@ It should also support conditional field enrichment and transformation, not only
 
 It must also support applying the same migration definition to one collection, many collections, or collection-name patterns.
 
-The implemented baseline now also includes whole-document mutation and durable reference repair. The next operational slice should focus on preview and backup-control features.
+The implemented baseline now also includes whole-document mutation, durable reference repair, dry-run execution, backup retention/cleanup controls, and the first V2 path-navigation slice for fixed array indices.
 
 ---
 
@@ -308,10 +308,15 @@ See [`02-nested-paths-and-array-cleanup.md`](./02-nested-paths-and-array-cleanup
 
 ### V2
 
-- array indices: `Items[0].LegacyId`
+- fixed array indices: `Items[0].LegacyId` and `LegacyIds[0]`
 - wildcard or recursive traversal for bulk nested cleanup
 - pruning nested empty arrays/documents after child removal
 - optional document-wide cleanup passes using composed predicates
+
+Current baseline note:
+
+- fixed `[index]` traversal is implemented for single-target path operations
+- `[*]`, recursive traversal, and broader multi-match cleanup still remain for a later slice
 
 ---
 

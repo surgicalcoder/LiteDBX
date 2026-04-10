@@ -160,6 +160,69 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task ConvertField_ShouldSupportIndexedArrayDocumentPath()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["CustomerId"] = new BsonValue("507f1f77bcf86cd799439011")
+                },
+                new BsonDocument
+                {
+                    ["CustomerId"] = new BsonValue("507f1f77bcf86cd799439012")
+                }
+            }
+        });
+
+        var report = await db.Migrations()
+            .Migration("convert-indexed-customer", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("Orders[0].CustomerId").FromStringToObjectId()))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        orders[0].AsDocument["CustomerId"].IsObjectId.Should().BeTrue();
+        orders[1].AsDocument["CustomerId"].IsString.Should().BeTrue();
+        report.Migrations[0].DocumentsModified.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ConvertField_ShouldSupportIndexedArrayValuePath()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["LegacyIds"] = new BsonArray
+            {
+                new BsonValue("507f1f77bcf86cd799439011"),
+                new BsonValue("leave-me-alone")
+            }
+        });
+
+        await db.Migrations()
+            .Migration("convert-indexed-value", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("LegacyIds[0]").FromStringToObjectId()))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var legacyIds = doc["LegacyIds"].AsArray;
+
+        legacyIds[0].IsObjectId.Should().BeTrue();
+        legacyIds[1].AsString.Should().Be("leave-me-alone");
+    }
+
+    [Fact]
     public async Task SetFieldWhen_ShouldOverwriteExistingNestedValue_WhenParentExists()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -203,6 +266,44 @@ public class MigrationRunner_Tests
         var doc = await collection.FindById(new BsonValue(1));
 
         doc.ContainsKey("Metadata").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IndexedPaths_ShouldBeSafeNoOp_ForMixedShapesAndOutOfRangeIndexes()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonDocument
+            {
+                ["CustomerId"] = new BsonValue("507f1f77bcf86cd799439011")
+            }
+        });
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(2),
+            ["Orders"] = new BsonArray()
+        });
+
+        var report = await db.Migrations()
+            .Migration("indexed-noop", m => m.ForCollection("tenant_*", c =>
+            {
+                c.ConvertField("Orders[0].CustomerId").FromStringToObjectId();
+                c.SetFieldWhen("Orders[1].Touched", new BsonValue(true), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        var first = await collection.FindById(new BsonValue(1));
+        var second = await collection.FindById(new BsonValue(2));
+
+        first["Orders"].IsDocument.Should().BeTrue();
+        first["Orders"].AsDocument["CustomerId"].IsString.Should().BeTrue();
+        second["Orders"].AsArray.Count.Should().Be(0);
+        report.Migrations[0].DocumentsModified.Should().Be(0);
     }
 
     [Fact]
@@ -551,6 +652,37 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task RemoveFieldWhen_ShouldPruneEmptyIndexedContainers_WhenEnabled()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["Legacy"] = new BsonDocument
+                    {
+                        ["Tags"] = new BsonArray()
+                    }
+                }
+            }
+        });
+
+        await db.Migrations()
+            .Migration("remove-indexed-tags", m => m.ForCollection("tenant_*", c =>
+                c.RemoveFieldWhen("Orders[0].Legacy.Tags", BsonPredicates.EmptyArray, pruneEmptyParents: true)))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+
+        doc.ContainsKey("Orders").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ModifyDocumentWhen_ShouldReplaceWholeDocument_WhilePreservingId()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -737,6 +869,78 @@ public class MigrationRunner_Tests
         collectionNames.Should().NotContain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
         collectionReport.BackupDisposition.Should().Be(BackupDisposition.Deleted);
         collectionReport.BackupCollectionName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CleanupBackupsAsync_ShouldDeleteMatchingBackupsOnly()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+        var orders = db.GetCollection("orders");
+
+        await customers.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-customer-id") });
+        await orders.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-order-id") });
+
+        await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .Migration("convert-orders", m => m.ForCollection("orders", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var cleanup = await db.Migrations().CleanupBackupsAsync("customers");
+        var collectionNames = await GetCollectionNamesAsync(db);
+
+        cleanup.TotalDeleted.Should().Be(1);
+        cleanup.Results.Should().ContainSingle();
+        cleanup.Results[0].SourceCollection.Should().Be("customers");
+        collectionNames.Should().NotContain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
+        collectionNames.Should().Contain(name => name.StartsWith("orders__backup__", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CleanupBackupsAsync_DryRun_ShouldReportWithoutDeleting()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-customer-id") });
+
+        await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var cleanup = await db.Migrations().CleanupBackupsAsync("customers", new BackupCleanupOptions { DryRun = true });
+        var collectionNames = await GetCollectionNamesAsync(db);
+
+        cleanup.TotalDeleted.Should().Be(0);
+        cleanup.TotalPlanned.Should().Be(1);
+        cleanup.Results[0].Disposition.Should().Be(BackupCleanupDisposition.Planned);
+        collectionNames.Should().Contain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task WildcardMigrations_ShouldSkipBackupArtifactsByDefault()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+        var users = db.GetCollection("users");
+
+        await customers.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-customer-id") });
+        await users.Insert(new BsonDocument { ["_id"] = new BsonValue(1), ["Touched"] = new BsonValue(false) });
+
+        await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var report = await db.Migrations()
+            .Migration("touch-all", m => m.ForCollection("*", c =>
+                c.SetFieldWhen("Touched", new BsonValue(true), BsonPredicates.Always)))
+            .RunAsync();
+
+        report.Migrations[0].Selectors[0].MatchedCollections.Should().NotContain(name => name.Contains("__backup__", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<List<BsonDocument>> GetAllDocumentsAsync(ILiteCollection<BsonDocument> collection)

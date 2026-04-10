@@ -102,6 +102,16 @@ For modify operations:
 
 V2 should expand the same path engine rather than replacing it.
 
+### Current implemented baseline
+
+The first V2 slice is now in place:
+
+- fixed array index traversal such as `Items[0].LegacyId`
+- direct indexed value paths such as `LegacyIds[0]`
+- pruning through mixed document/array containers after indexed child removal
+
+This keeps the existing single-target mutation model intact while extending the shared navigator beyond dotted-document-only paths.
+
 ### Added syntax in V2
 
 - array index: `Items[0].LegacyId`
@@ -113,9 +123,12 @@ V2 should expand the same path engine rather than replacing it.
 
 ```csharp
 .RemoveFieldWhen("Profile.Legacy.Tags", BsonPredicates.EmptyArray)
+.RemoveFieldWhen("Orders[0].Legacy.Tags", BsonPredicates.EmptyArray, pruneEmptyParents: true)
 .RemoveFieldWhen("Orders[*].LegacyId", BsonPredicates.WhiteSpaceString)
 .PruneEmptyContainers()
 ```
+
+At the moment, only the fixed-index example is implemented. `[*]`, recursive descent, and document-wide cleanup passes remain roadmap items.
 
 ### V2 pruning behavior
 
@@ -284,6 +297,8 @@ Deliver:
 - wildcard path works across multiple child docs
 - recursive cleanup removes nested empty arrays and empty strings
 - pruning across arrays behaves predictably
+
+Current coverage now includes the array-index and indexed-pruning portions of this list.
 
 ---
 

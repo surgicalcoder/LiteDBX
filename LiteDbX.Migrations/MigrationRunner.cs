@@ -62,6 +62,46 @@ public sealed class MigrationRunner
         return this;
     }
 
+    public ValueTask<BackupCleanupReport> CleanupBackupsAsync(string selector, CancellationToken cancellationToken = default)
+        => CleanupBackupsAsync(selector, new BackupCleanupOptions(), cancellationToken);
+
+    public async ValueTask<BackupCleanupReport> CleanupBackupsAsync(string selector, BackupCleanupOptions options, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(selector)) throw new ArgumentNullException(nameof(selector));
+        options ??= new BackupCleanupOptions();
+
+        var collectionSelector = new MigrationCollectionSelector(_journalCollection, _idMappingCollection, _includeSystemCollections);
+        var results = new List<BackupCleanupResult>();
+
+        await foreach (var name in _database.GetCollectionNames(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!TryParseBackupCollectionName(name, out var sourceCollection, out var runIdSuffix))
+            {
+                continue;
+            }
+
+            if (!collectionSelector.IsMatch(selector, sourceCollection))
+            {
+                continue;
+            }
+
+            if (options.DryRun)
+            {
+                results.Add(new BackupCleanupResult(sourceCollection, name, runIdSuffix, BackupCleanupDisposition.Planned));
+                continue;
+            }
+
+            if (await _database.DropCollection(name, cancellationToken).ConfigureAwait(false))
+            {
+                results.Add(new BackupCleanupResult(sourceCollection, name, runIdSuffix, BackupCleanupDisposition.Deleted));
+            }
+        }
+
+        return new BackupCleanupReport(new ReadOnlyCollection<BackupCleanupResult>(results));
+    }
+
     public ValueTask<MigrationReport> RunAsync(CancellationToken cancellationToken = default)
         => RunAsync(_defaultRunOptions.Clone(), cancellationToken);
 
@@ -543,6 +583,23 @@ public sealed class MigrationRunner
         }
 
         return id.IsString ? id.AsString : id.RawValue?.ToString();
+    }
+
+    private static bool TryParseBackupCollectionName(string collectionName, out string sourceCollection, out string runIdSuffix)
+    {
+        var markerIndex = collectionName.IndexOf("__backup__", StringComparison.OrdinalIgnoreCase);
+
+        if (markerIndex < 0)
+        {
+            sourceCollection = null;
+            runIdSuffix = null;
+            return false;
+        }
+
+        sourceCollection = collectionName.Substring(0, markerIndex);
+        runIdSuffix = collectionName.Substring(markerIndex + "__backup__".Length);
+
+        return sourceCollection.Length > 0 && runIdSuffix.Length > 0;
     }
 
     private readonly struct CollectionExecutionResult

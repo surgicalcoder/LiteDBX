@@ -68,6 +68,8 @@ public sealed class MigrationCollectionSelector
     private bool ShouldSkip(string name)
     {
         return name.StartsWith("$", StringComparison.Ordinal) ||
+               name.IndexOf("__backup__", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               name.IndexOf("__migrating__", StringComparison.OrdinalIgnoreCase) >= 0 ||
                string.Equals(name, _journalCollection, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(name, _idMappingCollection, StringComparison.OrdinalIgnoreCase);
     }
