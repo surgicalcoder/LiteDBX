@@ -825,14 +825,18 @@ internal sealed class ConvertStringToObjectIdOperation : IDocumentMigrationOpera
                 switch (InvalidPolicy)
                 {
                     case InvalidObjectIdPolicy.Fail:
+                        context.RecordInvalidValue(wildcardContext.Path, wildcardContext.Value, "Invalid ObjectId string.");
                         throw new InvalidOperationException($"Invalid ObjectId string at '{wildcardContext.Path}' in collection '{context.CollectionName}' for migration '{context.MigrationName}'.");
                     case InvalidObjectIdPolicy.SkipDocument:
                     case InvalidObjectIdPolicy.LeaveUnchanged:
+                        context.RecordInvalidValue(wildcardContext.Path, wildcardContext.Value, "Invalid ObjectId string.");
                         break;
                     case InvalidObjectIdPolicy.RemoveField:
+                        context.RecordInvalidValue(wildcardContext.Path, wildcardContext.Value, "Invalid ObjectId string.");
                         changed |= BsonPathNavigator.TryRemove(document, wildcardContext.Path, pruneEmptyParents: false);
                         break;
                     case InvalidObjectIdPolicy.GenerateNewId:
+                        context.RecordInvalidValue(wildcardContext.Path, wildcardContext.Value, "Invalid ObjectId string.");
                         changed |= BsonPathNavigator.TryReplace(document, wildcardContext.Path, new BsonValue(ObjectId.NewObjectId()));
                         break;
                     default:
@@ -865,15 +869,19 @@ internal sealed class ConvertStringToObjectIdOperation : IDocumentMigrationOpera
         switch (InvalidPolicy)
         {
             case InvalidObjectIdPolicy.Fail:
+                context.RecordInvalidValue(_path, predicateContext.Value, "Invalid ObjectId string.");
                 throw new InvalidOperationException($"Invalid ObjectId string at '{_path}' in collection '{context.CollectionName}' for migration '{context.MigrationName}'.");
             case InvalidObjectIdPolicy.SkipDocument:
             case InvalidObjectIdPolicy.LeaveUnchanged:
+                context.RecordInvalidValue(_path, predicateContext.Value, "Invalid ObjectId string.");
                 return DocumentOperationResult.NoChange();
             case InvalidObjectIdPolicy.RemoveField:
+                context.RecordInvalidValue(_path, predicateContext.Value, "Invalid ObjectId string.");
                 return BsonPathNavigator.TryRemove(document, _path, pruneEmptyParents: false)
                     ? DocumentOperationResult.Updated()
                     : DocumentOperationResult.NoChange();
             case InvalidObjectIdPolicy.GenerateNewId:
+                context.RecordInvalidValue(_path, predicateContext.Value, "Invalid ObjectId string.");
                 return BsonPathNavigator.TryReplace(document, _path, new BsonValue(ObjectId.NewObjectId()))
                     ? DocumentOperationResult.Updated()
                     : DocumentOperationResult.NoChange();

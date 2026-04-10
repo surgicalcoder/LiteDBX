@@ -33,6 +33,8 @@ public enum BackupDisposition
 public sealed class BackupCleanupOptions
 {
     public bool DryRun { get; set; }
+
+    public int? KeepLatestCount { get; set; }
 }
 
 public sealed class BackupCleanupReport
@@ -49,15 +51,18 @@ public sealed class BackupCleanupReport
     public int TotalDeleted => System.Linq.Enumerable.Count(Results, x => x.Disposition == BackupCleanupDisposition.Deleted);
 
     public int TotalPlanned => System.Linq.Enumerable.Count(Results, x => x.Disposition == BackupCleanupDisposition.Planned);
+
+    public int TotalRetained => System.Linq.Enumerable.Count(Results, x => x.Disposition == BackupCleanupDisposition.Retained);
 }
 
 public sealed class BackupCleanupResult
 {
-    internal BackupCleanupResult(string sourceCollection, string backupCollection, string runIdSuffix, BackupCleanupDisposition disposition)
+    internal BackupCleanupResult(string sourceCollection, string backupCollection, string runIdSuffix, System.DateTime? appliedUtc, BackupCleanupDisposition disposition)
     {
         SourceCollection = sourceCollection;
         BackupCollection = backupCollection;
         RunIdSuffix = runIdSuffix;
+        AppliedUtc = appliedUtc;
         Disposition = disposition;
     }
 
@@ -67,12 +72,15 @@ public sealed class BackupCleanupResult
 
     public string RunIdSuffix { get; }
 
+    public System.DateTime? AppliedUtc { get; }
+
     public BackupCleanupDisposition Disposition { get; }
 }
 
 public enum BackupCleanupDisposition
 {
     None,
+    Retained,
     Planned,
     Deleted
 }

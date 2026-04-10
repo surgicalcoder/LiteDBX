@@ -486,6 +486,11 @@ Deliver:
 Deliver:
 
 - dry-run reporting
+- preview invalid-value counts and capped samples for ObjectId conversion dry-runs
+- rebuild validation summary reporting for source/target counts and planned index replay
+- duplicate target `_id` preview counts and capped samples for rebuild dry-runs
+- planned secondary-index replay detail reporting for rebuild dry-runs and applied rebuilds
+- keep-latest-N backup cleanup retention for retained rebuild backups
 - progress callbacks
 - higher-level mutation helpers such as `RenameField`, `CopyField`, `MoveField`, and `SetDefaultWhenMissing`
 - optional shell integration or sample host

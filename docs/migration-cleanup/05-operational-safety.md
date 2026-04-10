@@ -15,6 +15,11 @@ The current safety slice now includes:
 - dry-run execution
 - backup retention policy
 - backup cleanup helpers
+- preview-only invalid value sampling for ObjectId conversion paths
+- pre-swap validation summary for rebuild migrations
+- duplicate target `_id` preview details for rebuild dry-runs
+- planned secondary-index replay details for rebuild migrations
+- keep-latest-N backup cleanup retention
 - preview/report behavior that helps operators verify a migration before committing it
 
 ---
@@ -42,6 +47,11 @@ At this point the library already supports:
 - dry-run execution via `MigrationRunOptions`
 - backup retention policy via `BackupRetentionPolicy`
 - backup cleanup via `CleanupBackupsAsync(...)`
+- dry-run invalid value counts and sampled preview entries for `ConvertField(...)` and `ConvertId()` ObjectId conversion failures
+- rebuild validation summaries exposing source count, expected/prepared target count, and planned secondary index replay count
+- dry-run duplicate target `_id` counts and capped duplicate samples for rebuild migrations
+- capped planned secondary-index replay descriptors (`Name`, `Expression`, `Unique`) for rebuild reports
+- keep-latest-N pruning via `BackupCleanupOptions.KeepLatestCount`
 
 So the most important remaining work is operational control, not more mutation surface.
 
@@ -114,6 +124,10 @@ The report should also expose:
 - `IsDryRun`
 - planned backup name for rebuild migrations
 - planned backup disposition
+- invalid value counts and a capped sample list for ObjectId conversion preview
+- rebuild validation summary with source vs prepared target counts and secondary index replay count
+- duplicate target `_id` counts and capped duplicate samples during rebuild preview
+- planned secondary-index replay details for rebuild preview and applied rebuild reports
 
 ---
 
@@ -164,22 +178,54 @@ Suggested values:
 These fit naturally in the same slice and should stay on the roadmap:
 
 ### 1. Duplicate target `_id` validation
-Already highly valuable for rebuild dry-run and real runs.
+This now surfaces preview details in rebuild dry-runs.
+
+Per collection, `RebuildValidation` now also exposes:
+
+- `DuplicateTargetIdCount`
+- `DuplicateTargetIdSamples`
+
+with representative source/duplicate pairs for conflicting target ids.
 
 ### 2. Preview-only invalid value samples
-Cap and report a few representative invalid values when previewing.
+This is now implemented for ObjectId conversion preview paths.
+
+Per collection, dry-run reports now expose:
+
+- `InvalidValueCount`
+- `InvalidValueSamples`
+
+with concrete resolved paths such as:
+
+- `Orders[0].LegacyId`
+- `Profile.LegacyId`
+- `_id`
 
 ### 3. Backup cleanup helper
 This is now implemented. Operators can use:
 
 ```csharp
 await db.Migrations().CleanupBackupsAsync("customers");
+await db.Migrations().CleanupBackupsAsync("customers", new BackupCleanupOptions { KeepLatestCount = 1 });
 ```
 
 to prune retained backup collections by collection selector, with optional dry-run preview.
 
+Cleanup reports now also expose retained entries when `KeepLatestCount` is used, including:
+
+- `Disposition = Retained`
+- `AppliedUtc`
+
 ### 4. Pre-swap validation summary
-Expose source vs shadow counts and index replay intent in the report.
+This is now implemented for rebuild migrations.
+
+Per collection, rebuild reports now expose `RebuildValidation` with:
+
+- `SourceDocumentCount`
+- `ExpectedTargetDocumentCount`
+- `PreparedTargetDocumentCount`
+- `SecondaryIndexesToReplayCount`
+- `SecondaryIndexesToReplay`
 
 ---
 
@@ -192,6 +238,10 @@ Expose source vs shadow counts and index replay intent in the report.
 - rebuild dry run does not write remap rows
 - dry run does not write migration history
 - dry run still reports would-modify / would-remove / would-remap counts
+- dry run reports invalid value counts and capped samples for field/id ObjectId conversion preview
+- rebuild dry-run reports pre-swap validation summary counts without creating shadow/backup collections
+- rebuild dry-run reports duplicate target `_id` counts and capped samples without failing the preview run
+- backup cleanup supports keep-latest-N retention with dry-run preview and retained/deleted reporting
 
 ### Backup retention
 

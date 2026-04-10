@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
 using LiteDbX.Migrations;
@@ -299,6 +300,79 @@ public class MigrationRunner_Tests
         doc["Orders"].AsArray[1].AsDocument["Nested"].AsDocument["LegacyId"].IsObjectId.Should().BeTrue();
         doc["Orders"].AsArray[2].AsString.Should().Be("skip");
         report.Migrations[0].DocumentsModified.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DryRun_ShouldReportInvalidFieldConversionSamples_WithConcretePaths()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Profile"] = new BsonDocument
+            {
+                ["LegacyId"] = new BsonValue("bad-profile-id")
+            },
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["LegacyId"] = new BsonValue("bad-order-id")
+                }
+            }
+        });
+
+        var report = await db.Migrations()
+            .Migration("preview-invalid-fields", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("**.LegacyId").FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.LeaveUnchanged)))
+            .RunAsync(new MigrationRunOptions { DryRun = true });
+
+        var collectionReport = report.Migrations[0].Selectors[0].Collections[0];
+        var doc = await collection.FindById(new BsonValue(1));
+
+        report.Migrations[0].InvalidValueCount.Should().Be(2);
+        collectionReport.InvalidValueCount.Should().Be(2);
+        collectionReport.InvalidValueSamples.Should().HaveCount(2);
+        collectionReport.InvalidValueSamples.Should().Contain(x => x.Path == "Profile.LegacyId" && x.RawValue == "bad-profile-id");
+        collectionReport.InvalidValueSamples.Should().Contain(x => x.Path == "Orders[0].LegacyId" && x.RawValue == "bad-order-id");
+        doc["Profile"].AsDocument["LegacyId"].AsString.Should().Be("bad-profile-id");
+        doc["Orders"].AsArray[0].AsDocument["LegacyId"].AsString.Should().Be("bad-order-id");
+    }
+
+    [Fact]
+    public async Task DryRun_ShouldCapInvalidFieldConversionSamples_PerCollection()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+        var values = new BsonArray();
+
+        for (var i = 0; i < 6; i++)
+        {
+            values.Add(new BsonDocument
+            {
+                ["LegacyId"] = new BsonValue("bad-" + i)
+            });
+        }
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = values
+        });
+
+        var report = await db.Migrations()
+            .Migration("preview-invalid-cap", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("Orders[*].LegacyId").FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.LeaveUnchanged)))
+            .RunAsync(new MigrationRunOptions { DryRun = true });
+
+        var collectionReport = report.Migrations[0].Selectors[0].Collections[0];
+
+        collectionReport.InvalidValueCount.Should().Be(6);
+        collectionReport.InvalidValueSamples.Should().HaveCount(5);
+        collectionReport.InvalidValueSamples.Should().Contain(x => x.Path == "Orders[0].LegacyId");
+        collectionReport.InvalidValueSamples.Should().Contain(x => x.Path == "Orders[4].LegacyId");
     }
 
     [Fact]
@@ -623,7 +697,7 @@ public class MigrationRunner_Tests
             ["Metadata"] = new BsonDocument()
         });
 
-        await db.Migrations()
+        var report = await db.Migrations()
             .Migration("convert-id", m => m.ForCollection("tenant_*", c =>
             {
                 c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
@@ -642,6 +716,16 @@ public class MigrationRunner_Tests
         docs.Should().OnlyContain(x => x["Metadata"].AsDocument["Source"].AsString == "migration");
         indexes.Should().Contain(x => x["name"].AsString == "idx_code");
         collectionNames.Should().Contain(name => name.StartsWith("tenant_one__backup__", StringComparison.OrdinalIgnoreCase));
+        var rebuildValidation = report.Migrations[0].Selectors[0].Collections[0].RebuildValidation;
+        rebuildValidation.Should().NotBeNull();
+        rebuildValidation.SourceDocumentCount.Should().Be(2);
+        rebuildValidation.ExpectedTargetDocumentCount.Should().Be(2);
+        rebuildValidation.PreparedTargetDocumentCount.Should().Be(2);
+        rebuildValidation.SecondaryIndexesToReplayCount.Should().Be(1);
+        rebuildValidation.SecondaryIndexesToReplay.Should().ContainSingle();
+        rebuildValidation.SecondaryIndexesToReplay[0].Name.Should().Be("idx_code");
+        rebuildValidation.SecondaryIndexesToReplay[0].Expression.Should().Be("$.Code");
+        rebuildValidation.SecondaryIndexesToReplay[0].Unique.Should().BeFalse();
     }
 
     [Fact]
@@ -672,6 +756,78 @@ public class MigrationRunner_Tests
         remaps[0]["oldIdRaw"].AsString.Should().Be("bad-id-value");
         remaps[0]["newObjectId"].IsObjectId.Should().BeTrue();
         history["generatedIdMappings"].AsInt32.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DryRun_Rebuild_ShouldReportDuplicateTargetIdSamples_WithoutCreatingArtifacts()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(new ObjectId("507f1f77bcf86cd799439011")),
+            ["Name"] = new BsonValue("Alice")
+        });
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("507f1f77bcf86cd799439011"),
+            ["Name"] = new BsonValue("Bob")
+        });
+
+        var report = await db.Migrations()
+            .Migration("preview-duplicate-id", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync(new MigrationRunOptions { DryRun = true });
+
+        var collectionReport = report.Migrations[0].Selectors[0].Collections[0];
+        var rebuildValidation = collectionReport.RebuildValidation;
+        var collectionNames = await GetCollectionNamesAsync(db);
+        var history = await db.GetCollection("__migrations").FindById(new BsonValue("preview-duplicate-id"));
+
+        rebuildValidation.Should().NotBeNull();
+        rebuildValidation.SourceDocumentCount.Should().Be(2);
+        rebuildValidation.ExpectedTargetDocumentCount.Should().Be(2);
+        rebuildValidation.PreparedTargetDocumentCount.Should().Be(1);
+        rebuildValidation.DuplicateTargetIdCount.Should().Be(1);
+        rebuildValidation.DuplicateTargetIdSamples.Should().ContainSingle();
+        rebuildValidation.DuplicateTargetIdSamples[0].TargetId.Should().Be("507f1f77bcf86cd799439011");
+        rebuildValidation.DuplicateTargetIdSamples[0].FirstSourceIdRaw.Should().Be("507f1f77bcf86cd799439011");
+        rebuildValidation.DuplicateTargetIdSamples[0].DuplicateSourceIdRaw.Should().Be("507f1f77bcf86cd799439011");
+        new[]
+        {
+            rebuildValidation.DuplicateTargetIdSamples[0].FirstSourceIdType,
+            rebuildValidation.DuplicateTargetIdSamples[0].DuplicateSourceIdType
+        }.Should().BeEquivalentTo(new[] { BsonType.ObjectId.ToString(), BsonType.String.ToString() });
+        collectionNames.Should().NotContain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
+        collectionNames.Should().NotContain(name => name.StartsWith("customers__migrating__", StringComparison.OrdinalIgnoreCase));
+        ((object)history).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConvertId_ShouldThrow_OnDuplicateTargetIds_DuringRealRun()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(new ObjectId("507f1f77bcf86cd799439011"))
+        });
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("507f1f77bcf86cd799439011")
+        });
+
+        Func<Task> action = async () => await db.Migrations()
+            .Migration("duplicate-id", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Duplicate target _id*");
     }
 
     [Fact]
@@ -1204,6 +1360,12 @@ public class MigrationRunner_Tests
         docs[0]["_id"].IsObjectId.Should().BeTrue();
         remaps.Should().BeEmpty();
         report.Migrations[0].DocumentsRemoved.Should().Be(1);
+        var rebuildValidation = report.Migrations[0].Selectors[0].Collections[0].RebuildValidation;
+        rebuildValidation.Should().NotBeNull();
+        rebuildValidation.SourceDocumentCount.Should().Be(2);
+        rebuildValidation.ExpectedTargetDocumentCount.Should().Be(1);
+        rebuildValidation.PreparedTargetDocumentCount.Should().Be(1);
+        rebuildValidation.SecondaryIndexesToReplayCount.Should().Be(0);
     }
 
     [Fact]
@@ -1275,6 +1437,70 @@ public class MigrationRunner_Tests
         collectionNames.Should().NotContain(name => name.StartsWith("customers__migrating__", StringComparison.OrdinalIgnoreCase));
         collectionReport.BackupDisposition.Should().Be(BackupDisposition.Planned);
         collectionReport.BackupCollectionName.Should().StartWith("customers__backup__");
+        collectionReport.RebuildValidation.Should().NotBeNull();
+        collectionReport.RebuildValidation.SourceDocumentCount.Should().Be(1);
+        collectionReport.RebuildValidation.ExpectedTargetDocumentCount.Should().Be(1);
+        collectionReport.RebuildValidation.PreparedTargetDocumentCount.Should().Be(1);
+        collectionReport.RebuildValidation.SecondaryIndexesToReplayCount.Should().Be(0);
+        collectionReport.RebuildValidation.SecondaryIndexesToReplay.Should().BeEmpty();
+        report.Migrations[0].InvalidValueCount.Should().Be(1);
+        collectionReport.InvalidValueCount.Should().Be(1);
+        collectionReport.InvalidValueSamples.Should().ContainSingle();
+        collectionReport.InvalidValueSamples[0].Path.Should().Be("_id");
+        collectionReport.InvalidValueSamples[0].RawValue.Should().Be("bad-customer-id");
+    }
+
+    [Fact]
+    public async Task ConvertId_NoOpRebuild_ShouldNotExposeValidationSummary()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(new ObjectId("507f1f77bcf86cd799439011")),
+            ["Name"] = new BsonValue("Alice")
+        });
+
+        var report = await db.Migrations()
+            .Migration("noop-convert-id", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var collectionReport = report.Migrations[0].Selectors[0].Collections[0];
+
+        collectionReport.DocumentsModified.Should().Be(0);
+        collectionReport.RebuildValidation.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DryRun_Rebuild_ShouldCapPlannedSecondaryIndexReplayDetails()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("bad-customer-id"),
+            ["Code"] = new BsonValue("A")
+        });
+
+        for (var i = 0; i < 12; i++)
+        {
+            await customers.EnsureIndex("idx_" + i, BsonExpression.Create("Code"), cancellationToken: default);
+        }
+
+        var report = await db.Migrations()
+            .Migration("preview-index-cap", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync(new MigrationRunOptions { DryRun = true });
+
+        var rebuildValidation = report.Migrations[0].Selectors[0].Collections[0].RebuildValidation;
+
+        rebuildValidation.Should().NotBeNull();
+        rebuildValidation.SecondaryIndexesToReplayCount.Should().Be(12);
+        rebuildValidation.SecondaryIndexesToReplay.Should().HaveCount(10);
+        rebuildValidation.SecondaryIndexesToReplay.Should().OnlyContain(x => x.Name.StartsWith("idx_", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1350,6 +1576,89 @@ public class MigrationRunner_Tests
         cleanup.TotalPlanned.Should().Be(1);
         cleanup.Results[0].Disposition.Should().Be(BackupCleanupDisposition.Planned);
         collectionNames.Should().Contain(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CleanupBackupsAsync_KeepLatestCount_ShouldRetainNewestMatchingBackups()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-customer-id"), ["Version"] = new BsonValue(0) });
+
+        await db.Migrations()
+            .Migration("customers-v1", m => m.ForCollection("customers", c =>
+            {
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
+                c.SetFieldWhen("Version", new BsonValue(1), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        await Task.Delay(20);
+
+        await db.Migrations()
+            .Migration("customers-v2", m => m.ForCollection("customers", c =>
+            {
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
+                c.SetFieldWhen("Version", new BsonValue(2), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        await Task.Delay(20);
+
+        await db.Migrations()
+            .Migration("customers-v3", m => m.ForCollection("customers", c =>
+            {
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
+                c.SetFieldWhen("Version", new BsonValue(3), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        var cleanup = await db.Migrations().CleanupBackupsAsync("customers", new BackupCleanupOptions { KeepLatestCount = 1 });
+        var collectionNames = await GetCollectionNamesAsync(db);
+
+        cleanup.TotalBackupsFound.Should().Be(3);
+        cleanup.TotalRetained.Should().Be(1);
+        cleanup.TotalDeleted.Should().Be(2);
+        cleanup.Results.Should().Contain(x => x.Disposition == BackupCleanupDisposition.Retained);
+        cleanup.Results.Count(x => x.Disposition == BackupCleanupDisposition.Deleted).Should().Be(2);
+        cleanup.Results.Should().OnlyContain(x => x.AppliedUtc.HasValue);
+        collectionNames.Count(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CleanupBackupsAsync_KeepLatestCount_DryRun_ShouldPlanOnlyOlderBackups()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+
+        await customers.Insert(new BsonDocument { ["_id"] = new BsonValue("bad-customer-id"), ["Version"] = new BsonValue(0) });
+
+        await db.Migrations()
+            .Migration("customers-preview-v1", m => m.ForCollection("customers", c =>
+            {
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
+                c.SetFieldWhen("Version", new BsonValue(1), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        await Task.Delay(20);
+
+        await db.Migrations()
+            .Migration("customers-preview-v2", m => m.ForCollection("customers", c =>
+            {
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId);
+                c.SetFieldWhen("Version", new BsonValue(2), BsonPredicates.Always);
+            }))
+            .RunAsync();
+
+        var cleanup = await db.Migrations().CleanupBackupsAsync("customers", new BackupCleanupOptions { DryRun = true, KeepLatestCount = 1 });
+        var collectionNames = await GetCollectionNamesAsync(db);
+
+        cleanup.TotalBackupsFound.Should().Be(2);
+        cleanup.TotalRetained.Should().Be(1);
+        cleanup.TotalPlanned.Should().Be(1);
+        collectionNames.Count(name => name.StartsWith("customers__backup__", StringComparison.OrdinalIgnoreCase)).Should().Be(2);
     }
 
     [Fact]
