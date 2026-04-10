@@ -15,7 +15,7 @@ It should also support conditional field enrichment and transformation, not only
 
 It must also support applying the same migration definition to one collection, many collections, or collection-name patterns.
 
-The implemented baseline now also includes whole-document mutation, durable reference repair, dry-run execution, backup retention/cleanup controls, and the first V2 path-navigation slice for fixed array indices.
+The implemented baseline now also includes whole-document mutation, durable reference repair, dry-run execution, backup retention/cleanup controls, and the first two V2 path-navigation slices for fixed array indices and `[*]` wildcard traversal.
 
 ---
 
@@ -309,14 +309,17 @@ See [`02-nested-paths-and-array-cleanup.md`](./02-nested-paths-and-array-cleanup
 ### V2
 
 - fixed array indices: `Items[0].LegacyId` and `LegacyIds[0]`
-- wildcard or recursive traversal for bulk nested cleanup
+- wildcard traversal: `Items[*].LegacyId`
 - pruning nested empty arrays/documents after child removal
 - optional document-wide cleanup passes using composed predicates
 
 Current baseline note:
 
-- fixed `[index]` traversal is implemented for single-target path operations
-- `[*]`, recursive traversal, and broader multi-match cleanup still remain for a later slice
+- fixed `[index]` traversal is implemented
+- `[*]` traversal is implemented for field mutation/conversion operations over existing array matches
+- paired wildcard `RepairReference(...)` is implemented for sibling-bound paths such as `Orders[*].Customer.$id` + `Orders[*].Customer.$ref`
+- recursive descent such as `**.LegacyId` is implemented for existing-target remove/modify/convert operations
+- broader recursive/wildcard multi-target transfer and add/set semantics still remain for a later slice
 
 ---
 

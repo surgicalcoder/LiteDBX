@@ -20,6 +20,128 @@ public static class BsonPathNavigator
         return IsAncestorOrDescendant(sourceSegments, targetSegments) || IsAncestorOrDescendant(targetSegments, sourceSegments);
     }
 
+    internal static bool HasWildcard(string path)
+    {
+        return TryParsePath(path, out var segments) && HasPattern(segments);
+    }
+
+    internal static bool HasRecursive(string path)
+    {
+        return TryParsePath(path, out var segments) && HasRecursive(segments);
+    }
+
+    internal static bool CanBindWildcardSiblingPath(string primaryPath, string siblingPath)
+    {
+        if (!TryParsePath(primaryPath, out var primarySegments) || !TryParsePath(siblingPath, out var siblingSegments))
+        {
+            return false;
+        }
+
+        if (!HasArrayWildcard(primarySegments) || !HasArrayWildcard(siblingSegments) || HasRecursive(primarySegments) || HasRecursive(siblingSegments) || primarySegments.Length != siblingSegments.Length || primarySegments.Length == 0)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < primarySegments.Length - 1; i++)
+        {
+            if (!SegmentsMatchExactly(primarySegments[i], siblingSegments[i]))
+            {
+                return false;
+            }
+        }
+
+        var primaryLeaf = primarySegments[primarySegments.Length - 1];
+        var siblingLeaf = siblingSegments[siblingSegments.Length - 1];
+
+        if (primaryLeaf.Kind != siblingLeaf.Kind)
+        {
+            return false;
+        }
+
+        return primaryLeaf.Kind != BsonPathSegmentKind.ArrayIndex || primaryLeaf.ArrayIndex == siblingLeaf.ArrayIndex;
+    }
+
+    internal static bool TryBindPath(string templatePath, string concretePath, out string boundPath)
+    {
+        boundPath = null;
+
+        if (!TryParsePath(templatePath, out var templateSegments) || !TryParsePath(concretePath, out var concreteSegments) || templateSegments.Length != concreteSegments.Length)
+        {
+            return false;
+        }
+
+        var currentPath = string.Empty;
+
+        for (var i = 0; i < templateSegments.Length; i++)
+        {
+            var templateSegment = templateSegments[i];
+            var concreteSegment = concreteSegments[i];
+            var isLeaf = i == templateSegments.Length - 1;
+
+            switch (templateSegment.Kind)
+            {
+                case BsonPathSegmentKind.Property:
+                    if (concreteSegment.Kind != BsonPathSegmentKind.Property)
+                    {
+                        return false;
+                    }
+
+                    if (!string.Equals(templateSegment.PropertyName, concreteSegment.PropertyName, StringComparison.OrdinalIgnoreCase) && !isLeaf)
+                    {
+                        return false;
+                    }
+
+                    currentPath = AppendSegment(currentPath, templateSegment);
+                    break;
+                case BsonPathSegmentKind.ArrayIndex:
+                    if (concreteSegment.Kind != BsonPathSegmentKind.ArrayIndex || templateSegment.ArrayIndex != concreteSegment.ArrayIndex)
+                    {
+                        return false;
+                    }
+
+                    currentPath = AppendArrayIndex(currentPath, templateSegment.ArrayIndex);
+                    break;
+                case BsonPathSegmentKind.ArrayWildcard:
+                    if (concreteSegment.Kind != BsonPathSegmentKind.ArrayIndex)
+                    {
+                        return false;
+                    }
+
+                    currentPath = AppendArrayIndex(currentPath, concreteSegment.ArrayIndex);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        boundPath = currentPath;
+        return true;
+    }
+
+    internal static IReadOnlyList<BsonPredicateContext> CreateContexts(BsonDocument document, string path, bool includeLeafWhenMissing, string collection, string migrationName)
+    {
+        if (document == null) throw new ArgumentNullException(nameof(document));
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentNullException(nameof(path));
+
+        if (!TryParsePath(path, out var segments))
+        {
+            return Array.Empty<BsonPredicateContext>();
+        }
+
+        if (!HasPattern(segments))
+        {
+            return new[]
+            {
+                CreateContext(document, path, collection, migrationName)
+            };
+        }
+
+        var contexts = new List<BsonPredicateContext>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CreateContexts(document, document, segments, 0, string.Empty, includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+        return contexts;
+    }
+
     public static bool TryGet(BsonDocument document, string path, out BsonDocument parent, out string fieldName, out BsonValue value)
     {
         if (document == null) throw new ArgumentNullException(nameof(document));
@@ -213,7 +335,7 @@ public static class BsonPathNavigator
 
         for (var i = 0; i < candidateAncestor.Count; i++)
         {
-            if (!candidateAncestor[i].Equals(candidateDescendant[i]))
+            if (!SegmentsOverlap(candidateAncestor[i], candidateDescendant[i]))
             {
                 return false;
             }
@@ -247,7 +369,7 @@ public static class BsonPathNavigator
             if (nextSeparator < 0)
             {
                 segments = parsed.ToArray();
-                return segments.Length > 0;
+                return segments.Length > 0 && ValidateSegments(segments);
             }
 
             position = nextSeparator + 1;
@@ -263,6 +385,12 @@ public static class BsonPathNavigator
 
     private static bool TryParseToken(string token, ICollection<BsonPathSegment> segments)
     {
+        if (string.Equals(token, "**", StringComparison.Ordinal))
+        {
+            segments.Add(BsonPathSegment.ForRecursiveDescent());
+            return true;
+        }
+
         var firstBracket = token.IndexOf('[');
 
         if (firstBracket < 0)
@@ -295,6 +423,20 @@ public static class BsonPathNavigator
             }
 
             position++;
+
+            if (position < token.Length && token[position] == '*')
+            {
+                position++;
+
+                if (position >= token.Length || token[position] != ']')
+                {
+                    return false;
+                }
+
+                segments.Add(BsonPathSegment.ForArrayWildcard());
+                position++;
+                continue;
+            }
 
             if (position >= token.Length || !char.IsDigit(token[position]))
             {
@@ -357,6 +499,11 @@ public static class BsonPathNavigator
                 continue;
             }
 
+            if (segment.Kind == BsonPathSegmentKind.ArrayWildcard || segment.Kind == BsonPathSegmentKind.RecursiveDescent)
+            {
+                return false;
+            }
+
             if (current == null || current.IsNull || !current.IsArray)
             {
                 return false;
@@ -393,6 +540,11 @@ public static class BsonPathNavigator
             return true;
         }
 
+        if (leaf.Kind == BsonPathSegmentKind.ArrayWildcard || leaf.Kind == BsonPathSegmentKind.RecursiveDescent)
+        {
+            return false;
+        }
+
         if (current == null || current.IsNull || !current.IsArray)
         {
             return false;
@@ -403,6 +555,126 @@ public static class BsonPathNavigator
         var currentValue = exists ? arrayParent[leaf.ArrayIndex] : BsonValue.Null;
         target = BsonPathTarget.ForArrayIndex(arrayParent, leaf.ArrayIndex, exists, currentValue);
         return true;
+    }
+
+    private static void CreateContexts(BsonDocument root, BsonValue current, IReadOnlyList<BsonPathSegment> segments, int index, string currentPath, bool includeLeafWhenMissing, string collection, string migrationName, ISet<string> seenPaths, ICollection<BsonPredicateContext> contexts)
+    {
+        var segment = segments[index];
+        var isLeaf = index == segments.Count - 1;
+
+        if (segment.Kind == BsonPathSegmentKind.RecursiveDescent)
+        {
+            CreateContexts(root, current, segments, index + 1, currentPath, includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+
+            if (current == null || current.IsNull)
+            {
+                return;
+            }
+
+            if (current.IsDocument)
+            {
+                foreach (var element in current.AsDocument)
+                {
+                    CreateContexts(root, element.Value, segments, index, AppendPropertyName(currentPath, element.Key), includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+                }
+
+                return;
+            }
+
+            if (current.IsArray)
+            {
+                var recursiveArray = current.AsArray;
+
+                for (var i = 0; i < recursiveArray.Count; i++)
+                {
+                    CreateContexts(root, recursiveArray[i], segments, index, AppendArrayIndex(currentPath, i), includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+                }
+            }
+
+            return;
+        }
+
+        if (segment.Kind == BsonPathSegmentKind.Property)
+        {
+            if (current == null || current.IsNull || !current.IsDocument)
+            {
+                return;
+            }
+
+            var path = AppendSegment(currentPath, segment);
+            var document = current.AsDocument;
+
+            if (isLeaf)
+            {
+                if (document.TryGetValue(segment.PropertyName, out var value))
+                {
+                    AddContext(path, new BsonPredicateContext(root, path, true, value, collection, migrationName), seenPaths, contexts);
+                }
+                else if (includeLeafWhenMissing)
+                {
+                    AddContext(path, BsonPredicateContext.Missing(root, path, collection, migrationName), seenPaths, contexts);
+                }
+
+                return;
+            }
+
+            if (document.TryGetValue(segment.PropertyName, out var child) && !child.IsNull)
+            {
+                CreateContexts(root, child, segments, index + 1, path, includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+            }
+
+            return;
+        }
+
+        if (current == null || current.IsNull || !current.IsArray)
+        {
+            return;
+        }
+
+        var array = current.AsArray;
+
+        if (segment.Kind == BsonPathSegmentKind.ArrayIndex)
+        {
+            if (segment.ArrayIndex < 0 || segment.ArrayIndex >= array.Count)
+            {
+                return;
+            }
+
+            var path = AppendArrayIndex(currentPath, segment.ArrayIndex);
+            var value = array[segment.ArrayIndex];
+
+            if (isLeaf)
+            {
+                AddContext(path, new BsonPredicateContext(root, path, true, value, collection, migrationName), seenPaths, contexts);
+                return;
+            }
+
+            CreateContexts(root, value, segments, index + 1, path, includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+            return;
+        }
+
+        for (var i = 0; i < array.Count; i++)
+        {
+            var path = AppendArrayIndex(currentPath, i);
+            var value = array[i];
+
+            if (isLeaf)
+            {
+                AddContext(path, new BsonPredicateContext(root, path, true, value, collection, migrationName), seenPaths, contexts);
+            }
+            else
+            {
+                CreateContexts(root, value, segments, index + 1, path, includeLeafWhenMissing, collection, migrationName, seenPaths, contexts);
+            }
+        }
+    }
+
+    private static void AddContext(string path, BsonPredicateContext context, ISet<string> seenPaths, ICollection<BsonPredicateContext> contexts)
+    {
+        if (seenPaths.Add(path))
+        {
+            contexts.Add(context);
+        }
     }
 
     private static bool SetValue(BsonPathTarget target, BsonValue value)
@@ -463,10 +735,125 @@ public static class BsonPathNavigator
         return false;
     }
 
+    private static bool HasPattern(IReadOnlyList<BsonPathSegment> segments)
+    {
+        return HasArrayWildcard(segments) || HasRecursive(segments);
+    }
+
+    private static bool HasArrayWildcard(IReadOnlyList<BsonPathSegment> segments)
+    {
+        for (var i = 0; i < segments.Count; i++)
+        {
+            if (segments[i].Kind == BsonPathSegmentKind.ArrayWildcard)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasRecursive(IReadOnlyList<BsonPathSegment> segments)
+    {
+        for (var i = 0; i < segments.Count; i++)
+        {
+            if (segments[i].Kind == BsonPathSegmentKind.RecursiveDescent)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool SegmentsOverlap(BsonPathSegment left, BsonPathSegment right)
+    {
+        if (left.Kind == BsonPathSegmentKind.RecursiveDescent || right.Kind == BsonPathSegmentKind.RecursiveDescent)
+        {
+            return left.Kind == right.Kind;
+        }
+
+        if (left.Kind == BsonPathSegmentKind.Property || right.Kind == BsonPathSegmentKind.Property)
+        {
+            return left.Kind == right.Kind && string.Equals(left.PropertyName, right.PropertyName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (left.Kind == BsonPathSegmentKind.ArrayWildcard || right.Kind == BsonPathSegmentKind.ArrayWildcard)
+        {
+            return true;
+        }
+
+        return left.ArrayIndex == right.ArrayIndex;
+    }
+
+    private static bool SegmentsMatchExactly(BsonPathSegment left, BsonPathSegment right)
+    {
+        if (left.Kind != right.Kind)
+        {
+            return false;
+        }
+
+        switch (left.Kind)
+        {
+            case BsonPathSegmentKind.Property:
+                return string.Equals(left.PropertyName, right.PropertyName, StringComparison.OrdinalIgnoreCase);
+            case BsonPathSegmentKind.ArrayIndex:
+                return left.ArrayIndex == right.ArrayIndex;
+            case BsonPathSegmentKind.ArrayWildcard:
+                return true;
+            case BsonPathSegmentKind.RecursiveDescent:
+                return true;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+    }
+
+    private static bool ValidateSegments(IReadOnlyList<BsonPathSegment> segments)
+    {
+        var recursiveCount = 0;
+
+        for (var i = 0; i < segments.Count; i++)
+        {
+            if (segments[i].Kind != BsonPathSegmentKind.RecursiveDescent)
+            {
+                continue;
+            }
+
+            recursiveCount++;
+
+            if (recursiveCount > 1 || i == segments.Count - 1)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string AppendSegment(string path, BsonPathSegment segment)
+    {
+        return segment.Kind == BsonPathSegmentKind.Property
+            ? AppendPropertyName(path, segment.PropertyName)
+            : AppendArrayIndex(path, segment.ArrayIndex);
+    }
+
+    private static string AppendPropertyName(string path, string propertyName)
+    {
+        return path.Length == 0 ? propertyName : path + "." + propertyName;
+    }
+
+    private static string AppendArrayIndex(string path, int index)
+    {
+        return path + "[" + index + "]";
+    }
+
+
     private enum BsonPathSegmentKind
     {
         Property,
-        ArrayIndex
+        ArrayIndex,
+        ArrayWildcard,
+        RecursiveDescent
     }
 
     private readonly struct BsonPathSegment : IEquatable<BsonPathSegment>
@@ -487,6 +874,10 @@ public static class BsonPathNavigator
         public static BsonPathSegment ForProperty(string propertyName) => new(BsonPathSegmentKind.Property, propertyName, -1);
 
         public static BsonPathSegment ForArrayIndex(int arrayIndex) => new(BsonPathSegmentKind.ArrayIndex, null, arrayIndex);
+
+        public static BsonPathSegment ForArrayWildcard() => new(BsonPathSegmentKind.ArrayWildcard, null, -1);
+
+        public static BsonPathSegment ForRecursiveDescent() => new(BsonPathSegmentKind.RecursiveDescent, null, -1);
 
         public bool Equals(BsonPathSegment other)
         {

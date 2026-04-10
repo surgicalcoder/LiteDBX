@@ -223,6 +223,85 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task ConvertField_ShouldSupportWildcardArrayDocumentPath()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument { ["CustomerId"] = new BsonValue("507f1f77bcf86cd799439011") },
+                new BsonDocument { ["CustomerId"] = new BsonValue("507f1f77bcf86cd799439012") },
+                new BsonDocument { ["Other"] = new BsonValue("skip") },
+                new BsonValue("not-a-document")
+            }
+        });
+
+        var report = await db.Migrations()
+            .Migration("convert-wildcard-customer", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("Orders[*].CustomerId").FromStringToObjectId()))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        orders[0].AsDocument["CustomerId"].IsObjectId.Should().BeTrue();
+        orders[1].AsDocument["CustomerId"].IsObjectId.Should().BeTrue();
+        orders[2].AsDocument.ContainsKey("CustomerId").Should().BeFalse();
+        orders[3].IsString.Should().BeTrue();
+        report.Migrations[0].DocumentsModified.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ConvertField_ShouldSupportRecursivePathAcrossDocumentsAndArrays()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["LegacyId"] = new BsonValue("507f1f77bcf86cd799439011"),
+            ["Profile"] = new BsonDocument
+            {
+                ["LegacyId"] = new BsonValue("507f1f77bcf86cd799439012")
+            },
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["LegacyId"] = new BsonValue("507f1f77bcf86cd799439013")
+                },
+                new BsonDocument
+                {
+                    ["Nested"] = new BsonDocument
+                    {
+                        ["LegacyId"] = new BsonValue("507f1f77bcf86cd799439014")
+                    }
+                },
+                new BsonValue("skip")
+            }
+        });
+
+        var report = await db.Migrations()
+            .Migration("convert-recursive-legacy", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("**.LegacyId").FromStringToObjectId()))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+
+        doc["LegacyId"].IsObjectId.Should().BeTrue();
+        doc["Profile"].AsDocument["LegacyId"].IsObjectId.Should().BeTrue();
+        doc["Orders"].AsArray[0].AsDocument["LegacyId"].IsObjectId.Should().BeTrue();
+        doc["Orders"].AsArray[1].AsDocument["Nested"].AsDocument["LegacyId"].IsObjectId.Should().BeTrue();
+        doc["Orders"].AsArray[2].AsString.Should().Be("skip");
+        report.Migrations[0].DocumentsModified.Should().Be(1);
+    }
+
+    [Fact]
     public async Task SetFieldWhen_ShouldOverwriteExistingNestedValue_WhenParentExists()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -303,6 +382,94 @@ public class MigrationRunner_Tests
         first["Orders"].IsDocument.Should().BeTrue();
         first["Orders"].AsDocument["CustomerId"].IsString.Should().BeTrue();
         second["Orders"].AsArray.Count.Should().Be(0);
+        report.Migrations[0].DocumentsModified.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SetDefaultWhenMissing_ShouldSupportWildcardArrayDocumentPath()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument(),
+                new BsonDocument { ["Status"] = new BsonValue("existing") },
+                new BsonValue("skip")
+            }
+        });
+
+        await db.Migrations()
+            .Migration("default-wildcard-status", m => m.ForCollection("tenant_*", c =>
+                c.SetDefaultWhenMissing("Orders[*].Status", new BsonValue("new"))))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        orders[0].AsDocument["Status"].AsString.Should().Be("new");
+        orders[1].AsDocument["Status"].AsString.Should().Be("existing");
+        orders[2].AsString.Should().Be("skip");
+    }
+
+    [Fact]
+    public async Task SetFieldWhen_ShouldSupportWildcardArrayDocumentPath()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument { ["Touched"] = new BsonValue(false) },
+                new BsonDocument(),
+                new BsonValue("skip")
+            }
+        });
+
+        await db.Migrations()
+            .Migration("set-wildcard-touched", m => m.ForCollection("tenant_*", c =>
+                c.SetFieldWhen("Orders[*].Touched", new BsonValue(true), BsonPredicates.Always)))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        orders[0].AsDocument["Touched"].AsBoolean.Should().BeTrue();
+        orders[1].AsDocument["Touched"].AsBoolean.Should().BeTrue();
+        orders[2].AsString.Should().Be("skip");
+    }
+
+    [Fact]
+    public async Task RecursiveConvertField_ShouldBeSafeNoOp_ForMixedShapesWithoutMatches()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument { ["Name"] = new BsonValue("Alice") },
+                new BsonArray { new BsonValue(123) },
+                new BsonValue("skip")
+            }
+        });
+
+        var report = await db.Migrations()
+            .Migration("recursive-noop", m => m.ForCollection("tenant_*", c =>
+                c.ConvertField("**.LegacyId").FromStringToObjectId()))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+
+        doc["Orders"].AsArray[0].AsDocument.ContainsKey("LegacyId").Should().BeFalse();
         report.Migrations[0].DocumentsModified.Should().Be(0);
     }
 
@@ -594,6 +761,114 @@ public class MigrationRunner_Tests
     }
 
     [Fact]
+    public async Task RepairReference_ShouldSupportPairedWildcardDbRefPaths()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+        var invoices = db.GetCollection("invoices");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("bad-customer-id"),
+            ["Name"] = new BsonValue("Alice")
+        });
+
+        await invoices.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["Customer"] = new BsonDocument
+                    {
+                        ["$id"] = new BsonValue("bad-customer-id"),
+                        ["$ref"] = new BsonValue("customers")
+                    }
+                },
+                new BsonDocument
+                {
+                    ["Customer"] = new BsonDocument
+                    {
+                        ["$id"] = new BsonValue("bad-customer-id"),
+                        ["$ref"] = new BsonValue("suppliers")
+                    }
+                },
+                new BsonValue("skip")
+            }
+        });
+
+        await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var report = await db.Migrations()
+            .Migration("repair-dbrefs-array", m => m.ForCollection("invoices", c =>
+                c.RepairReference("Orders[*].Customer.$id")
+                    .FromCollection("customers")
+                    .WhenReferenceCollectionIs("Orders[*].Customer.$ref")
+                    .Apply()))
+            .RunAsync();
+
+        var invoice = await invoices.FindById(new BsonValue(1));
+        var orders = invoice["Orders"].AsArray;
+
+        orders[0].AsDocument["Customer"].AsDocument["$id"].IsObjectId.Should().BeTrue();
+        orders[1].AsDocument["Customer"].AsDocument["$id"].IsString.Should().BeTrue();
+        orders[2].AsString.Should().Be("skip");
+        report.Migrations[0].RepairedReferences.Should().Be(1);
+        report.Migrations[0].Selectors[0].Collections[0].RepairedReferences.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RepairReference_WildcardPair_ShouldSkipMissingSiblingGuardPaths()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var customers = db.GetCollection("customers");
+        var invoices = db.GetCollection("invoices");
+
+        await customers.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue("bad-customer-id"),
+            ["Name"] = new BsonValue("Alice")
+        });
+
+        await invoices.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["Customer"] = new BsonDocument
+                    {
+                        ["$id"] = new BsonValue("bad-customer-id")
+                    }
+                }
+            }
+        });
+
+        await db.Migrations()
+            .Migration("convert-customers", m => m.ForCollection("customers", c =>
+                c.ConvertId().FromStringToObjectId().OnInvalidString(InvalidObjectIdPolicy.GenerateNewId)))
+            .RunAsync();
+
+        var report = await db.Migrations()
+            .Migration("repair-dbrefs-array", m => m.ForCollection("invoices", c =>
+                c.RepairReference("Orders[*].Customer.$id")
+                    .FromCollection("customers")
+                    .WhenReferenceCollectionIs("Orders[*].Customer.$ref")
+                    .Apply()))
+            .RunAsync();
+
+        var invoice = await invoices.FindById(new BsonValue(1));
+
+        invoice["Orders"].AsArray[0].AsDocument["Customer"].AsDocument["$id"].IsString.Should().BeTrue();
+        report.Migrations[0].RepairedReferences.Should().Be(0);
+    }
+
+    [Fact]
     public async Task ConvertId_ReportShouldExposeBackupCollectionName_AndGeneratedMappingsPerCollection()
     {
         await using var db = await LiteDatabase.Open(":memory:");
@@ -680,6 +955,163 @@ public class MigrationRunner_Tests
         var doc = await collection.FindById(new BsonValue(1));
 
         doc.ContainsKey("Orders").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RemoveFieldWhen_ShouldSupportWildcardPruningAcrossArrayElements()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["Legacy"] = new BsonDocument
+                    {
+                        ["Tags"] = new BsonArray()
+                    }
+                },
+                new BsonDocument
+                {
+                    ["Legacy"] = new BsonDocument
+                    {
+                        ["Tags"] = new BsonArray
+                        {
+                            new BsonValue("keep")
+                        }
+                    }
+                }
+            }
+        });
+
+        await db.Migrations()
+            .Migration("remove-wildcard-tags", m => m.ForCollection("tenant_*", c =>
+                c.RemoveFieldWhen("Orders[*].Legacy.Tags", BsonPredicates.EmptyArray, pruneEmptyParents: true)))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        orders.Count.Should().Be(1);
+        orders[0].AsDocument["Legacy"].AsDocument["Tags"].AsArray.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RemoveFieldWhen_ShouldSupportRecursivePruningAcrossNestedContainers()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Profile"] = new BsonDocument
+            {
+                ["Legacy"] = new BsonDocument
+                {
+                    ["Tags"] = new BsonArray()
+                }
+            },
+            ["Orders"] = new BsonArray
+            {
+                new BsonDocument
+                {
+                    ["Legacy"] = new BsonDocument
+                    {
+                        ["Tags"] = new BsonArray()
+                    }
+                },
+                new BsonDocument
+                {
+                    ["Legacy"] = new BsonDocument
+                    {
+                        ["Tags"] = new BsonArray
+                        {
+                            new BsonValue("keep")
+                        }
+                    }
+                }
+            }
+        });
+
+        await db.Migrations()
+            .Migration("remove-recursive-tags", m => m.ForCollection("tenant_*", c =>
+                c.RemoveFieldWhen("**.Tags", BsonPredicates.EmptyArray, pruneEmptyParents: true)))
+            .RunAsync();
+
+        var doc = await collection.FindById(new BsonValue(1));
+        var orders = doc["Orders"].AsArray;
+
+        doc.ContainsKey("Profile").Should().BeFalse();
+        orders.Count.Should().Be(1);
+        orders[0].AsDocument["Legacy"].AsDocument["Tags"].AsArray.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public void RenameField_ShouldRejectWildcardPaths_InCurrentV2Slice()
+    {
+        var action = () => new CollectionMigrationBuilder().RenameField("Orders[*].LegacyId", "Orders[*].CustomerId");
+
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task SetFieldWhen_ShouldRejectRecursivePaths_InCurrentV2Slice()
+    {
+        await using var db = await LiteDatabase.Open(":memory:");
+        var collection = db.GetCollection("tenant_one");
+
+        await collection.Insert(new BsonDocument
+        {
+            ["_id"] = new BsonValue(1),
+            ["Profile"] = new BsonDocument()
+        });
+
+        Func<Task> action = async () => await db.Migrations()
+            .Migration("bad-recursive-set", m => m.ForCollection("tenant_*", c =>
+                c.SetFieldWhen("**.Touched", new BsonValue(true), BsonPredicates.Always)))
+            .RunAsync();
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void RepairReference_ShouldRejectWildcardPathsWithoutPairedGuard_InCurrentV2Slice()
+    {
+        var action = () => new CollectionMigrationBuilder()
+            .RepairReference("Orders[*].CustomerId")
+            .FromCollection("customers")
+            .Apply();
+
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void RepairReference_ShouldRejectMismatchedWildcardPairTopology_InCurrentV2Slice()
+    {
+        var action = () => new CollectionMigrationBuilder()
+            .RepairReference("Orders[*].Customer.$id")
+            .FromCollection("customers")
+            .WhenReferenceCollectionIs("Orders.Customer.$ref")
+            .Apply();
+
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void RepairReference_ShouldRejectRecursivePaths_InCurrentV2Slice()
+    {
+        var action = () => new CollectionMigrationBuilder()
+            .RepairReference("**.$id")
+            .FromCollection("customers")
+            .WhenReferenceCollectionIs("**.$ref")
+            .Apply();
+
+        action.Should().Throw<ArgumentException>();
     }
 
     [Fact]

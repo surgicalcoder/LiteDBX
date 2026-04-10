@@ -110,6 +110,19 @@ The first V2 slice is now in place:
 - direct indexed value paths such as `LegacyIds[0]`
 - pruning through mixed document/array containers after indexed child removal
 
+The next V2 slice is also now in place:
+
+- wildcard array traversal such as `Items[*].LegacyId`
+- wildcard application across existing array elements for field conversion and mutation
+- concrete per-match path resolution for wildcard predicate contexts and execution
+- paired wildcard path binding for sibling reference repair such as `Orders[*].Customer.$id` + `Orders[*].Customer.$ref`
+
+The next recursive slice is now also in place:
+
+- recursive descent such as `**.LegacyId`
+- recursive traversal through nested documents and arrays
+- concrete recursive match expansion for existing-target remove/modify/convert operations
+
 This keeps the existing single-target mutation model intact while extending the shared navigator beyond dotted-document-only paths.
 
 ### Added syntax in V2
@@ -128,7 +141,16 @@ This keeps the existing single-target mutation model intact while extending the 
 .PruneEmptyContainers()
 ```
 
-At the moment, only the fixed-index example is implemented. `[*]`, recursive descent, and document-wide cleanup passes remain roadmap items.
+At the moment, fixed-index, `[*]`, and a first recursive-descent slice are implemented. Document-wide cleanup passes remain roadmap items.
+
+Current implementation note:
+
+- fixed-index paths are implemented
+- `[*]` paths are implemented for field add/set/modify/remove and `ConvertField(...)`
+- `**` paths are implemented for existing-target `RemoveFieldWhen(...)`, `ModifyFieldWhen(...)`, and `ConvertField(...)`
+- `RepairReference(...)` supports paired sibling wildcard binding when both paths share the same wildcard topology and parent path
+- `AddFieldWhen(...)`, `SetFieldWhen(...)`, `RenameField(...)`, `CopyField(...)`, `MoveField(...)`, and recursive `RepairReference(...)` remain intentionally unsupported for recursive paths in this slice
+- broader document-wide traversal/reporting remains future work
 
 ### V2 pruning behavior
 
@@ -299,6 +321,12 @@ Deliver:
 - pruning across arrays behaves predictably
 
 Current coverage now includes the array-index and indexed-pruning portions of this list.
+
+Coverage now also includes wildcard traversal for conversion, add/set semantics on existing parents, and pruning across wildcard-expanded array elements.
+
+Coverage now also includes paired wildcard reference repair for guarded DbRef-like array elements.
+
+Coverage now also includes recursive conversion and recursive pruning across nested document/array containers.
 
 ---
 

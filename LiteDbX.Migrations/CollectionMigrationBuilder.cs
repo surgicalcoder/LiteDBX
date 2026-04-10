@@ -327,6 +327,26 @@ internal sealed class RemoveFieldWhenOperation : IDocumentMigrationOperation
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var predicateContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: false, context.CollectionName, context.MigrationName);
+            var changed = false;
+
+            for (var i = predicateContexts.Count - 1; i >= 0; i--)
+            {
+                var wildcardContext = predicateContexts[i];
+
+                if (!_when(wildcardContext) || !wildcardContext.Exists)
+                {
+                    continue;
+                }
+
+                changed |= BsonPathNavigator.TryRemove(document, wildcardContext.Path, _pruneEmptyParents);
+            }
+
+            return changed ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         var predicateContext = BsonPathNavigator.CreateContext(document, _path, context.CollectionName, context.MigrationName);
 
         if (!_when(predicateContext) || !predicateContext.Exists)
@@ -376,6 +396,32 @@ internal sealed class AddFieldWhenOperation : IDocumentMigrationOperation
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasRecursive(_path))
+        {
+            throw new InvalidOperationException("Recursive paths are not supported for AddFieldWhen/SetDefaultWhenMissing in this V2 slice.");
+        }
+
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var predicateContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: true, context.CollectionName, context.MigrationName);
+            var changed = false;
+
+            for (var i = 0; i < predicateContexts.Count; i++)
+            {
+                var wildcardContext = predicateContexts[i];
+
+                if (!_when(wildcardContext) || wildcardContext.Exists)
+                {
+                    continue;
+                }
+
+                var wildcardValue = _factory(wildcardContext) ?? BsonValue.Null;
+                changed |= BsonPathNavigator.TryAdd(document, wildcardContext.Path, wildcardValue, overwrite: false);
+            }
+
+            return changed ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         var predicateContext = BsonPathNavigator.CreateContext(document, _path, context.CollectionName, context.MigrationName);
 
         if (!_when(predicateContext) || predicateContext.Exists)
@@ -408,6 +454,27 @@ internal sealed class ModifyFieldWhenOperation : IDocumentMigrationOperation
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var predicateContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: false, context.CollectionName, context.MigrationName);
+            var changed = false;
+
+            for (var i = 0; i < predicateContexts.Count; i++)
+            {
+                var wildcardContext = predicateContexts[i];
+
+                if (!_when(wildcardContext) || !wildcardContext.Exists)
+                {
+                    continue;
+                }
+
+                var wildcardValue = _mutator(wildcardContext) ?? BsonValue.Null;
+                changed |= BsonPathNavigator.TryReplace(document, wildcardContext.Path, wildcardValue);
+            }
+
+            return changed ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         var predicateContext = BsonPathNavigator.CreateContext(document, _path, context.CollectionName, context.MigrationName);
 
         if (!_when(predicateContext) || !predicateContext.Exists)
@@ -476,6 +543,32 @@ internal sealed class SetFieldWhenOperation : IDocumentMigrationOperation
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasRecursive(_path))
+        {
+            throw new InvalidOperationException("Recursive paths are not supported for SetFieldWhen in this V2 slice.");
+        }
+
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var predicateContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: true, context.CollectionName, context.MigrationName);
+            var changed = false;
+
+            for (var i = 0; i < predicateContexts.Count; i++)
+            {
+                var wildcardContext = predicateContexts[i];
+
+                if (!_when(wildcardContext))
+                {
+                    continue;
+                }
+
+                var wildcardValue = _factory(wildcardContext) ?? BsonValue.Null;
+                changed |= BsonPathNavigator.TryAdd(document, wildcardContext.Path, wildcardValue, overwrite: true);
+            }
+
+            return changed ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         var predicateContext = BsonPathNavigator.CreateContext(document, _path, context.CollectionName, context.MigrationName);
 
         if (!_when(predicateContext))
@@ -506,6 +599,11 @@ internal sealed class FieldTransferOperation : IDocumentMigrationOperation
 
     private FieldTransferOperation(string sourcePath, string targetPath, FieldTransferKind kind)
     {
+        if (BsonPathNavigator.HasWildcard(sourcePath) || BsonPathNavigator.HasWildcard(targetPath))
+        {
+            throw new ArgumentException("Wildcard/recursive paths are not supported for RenameField/CopyField/MoveField in this V2 slice.");
+        }
+
         if (BsonPathNavigator.PathsConflict(sourcePath, targetPath))
         {
             throw new ArgumentException($"Source path '{sourcePath}' and target path '{targetPath}' overlap and cannot be used together.");
@@ -573,6 +671,30 @@ internal sealed class RepairReferenceOperation : IDocumentMigrationOperation, II
 
     public RepairReferenceOperation(string path, string sourceCollection, string sourceMigrationName, string referenceCollectionPath)
     {
+        var targetHasRecursive = BsonPathNavigator.HasRecursive(path);
+        var referenceHasRecursive = referenceCollectionPath != null && BsonPathNavigator.HasRecursive(referenceCollectionPath);
+
+        if (targetHasRecursive || referenceHasRecursive)
+        {
+            throw new ArgumentException("Recursive paths are not supported for RepairReference in this V2 slice.");
+        }
+
+        var targetHasWildcard = BsonPathNavigator.HasWildcard(path);
+        var referenceHasWildcard = referenceCollectionPath != null && BsonPathNavigator.HasWildcard(referenceCollectionPath);
+
+        if (targetHasWildcard || referenceHasWildcard)
+        {
+            if (!targetHasWildcard || !referenceHasWildcard || referenceCollectionPath == null)
+            {
+                throw new ArgumentException("Wildcard RepairReference requires a paired wildcard collection-guard path in this V2 slice.");
+            }
+
+            if (!BsonPathNavigator.CanBindWildcardSiblingPath(path, referenceCollectionPath))
+            {
+                throw new ArgumentException("Wildcard RepairReference paths must share the same wildcard topology and parent path in this V2 slice.");
+            }
+        }
+
         _path = path;
         SourceCollection = sourceCollection;
         SourceMigrationName = sourceMigrationName;
@@ -587,6 +709,49 @@ internal sealed class RepairReferenceOperation : IDocumentMigrationOperation, II
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var targetContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: false, context.CollectionName, context.MigrationName);
+            var anyChanged = false;
+
+            for (var i = 0; i < targetContexts.Count; i++)
+            {
+                var wildcardTargetContext = targetContexts[i];
+
+                if (!wildcardTargetContext.Exists || !wildcardTargetContext.Value.IsString)
+                {
+                    continue;
+                }
+
+                if (!BsonPathNavigator.TryBindPath(_referenceCollectionPath, wildcardTargetContext.Path, out var boundReferencePath))
+                {
+                    continue;
+                }
+
+                var refContext = BsonPathNavigator.CreateContext(document, boundReferencePath, context.CollectionName, context.MigrationName);
+
+                if (!refContext.Exists || !refContext.Value.IsString || !string.Equals(refContext.Value.AsString, SourceCollection, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!context.TryGetRemappedObjectId(SourceCollection, SourceMigrationName, wildcardTargetContext.Value.AsString, BsonType.String, out var remappedObjectId))
+                {
+                    continue;
+                }
+
+                if (!BsonPathNavigator.TryReplace(document, wildcardTargetContext.Path, new BsonValue(new ObjectId(remappedObjectId))))
+                {
+                    continue;
+                }
+
+                context.IncrementRepairedReferenceCount();
+                anyChanged = true;
+            }
+
+            return anyChanged ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         if (_referenceCollectionPath != null)
         {
             var refContext = BsonPathNavigator.CreateContext(document, _referenceCollectionPath, context.CollectionName, context.MigrationName);
@@ -637,6 +802,47 @@ internal sealed class ConvertStringToObjectIdOperation : IDocumentMigrationOpera
 
     public DocumentOperationResult Apply(BsonDocument document, DocumentMigrationExecutionContext context)
     {
+        if (BsonPathNavigator.HasWildcard(_path))
+        {
+            var predicateContexts = BsonPathNavigator.CreateContexts(document, _path, includeLeafWhenMissing: false, context.CollectionName, context.MigrationName);
+            var changed = false;
+
+            for (var i = 0; i < predicateContexts.Count; i++)
+            {
+                var wildcardContext = predicateContexts[i];
+
+                if (!wildcardContext.Exists || wildcardContext.Value.IsObjectId || !wildcardContext.Value.IsString)
+                {
+                    continue;
+                }
+
+                if (TryParseObjectId(wildcardContext.Value.AsString, out var wildcardObjectId))
+                {
+                    changed |= BsonPathNavigator.TryReplace(document, wildcardContext.Path, new BsonValue(wildcardObjectId));
+                    continue;
+                }
+
+                switch (InvalidPolicy)
+                {
+                    case InvalidObjectIdPolicy.Fail:
+                        throw new InvalidOperationException($"Invalid ObjectId string at '{wildcardContext.Path}' in collection '{context.CollectionName}' for migration '{context.MigrationName}'.");
+                    case InvalidObjectIdPolicy.SkipDocument:
+                    case InvalidObjectIdPolicy.LeaveUnchanged:
+                        break;
+                    case InvalidObjectIdPolicy.RemoveField:
+                        changed |= BsonPathNavigator.TryRemove(document, wildcardContext.Path, pruneEmptyParents: false);
+                        break;
+                    case InvalidObjectIdPolicy.GenerateNewId:
+                        changed |= BsonPathNavigator.TryReplace(document, wildcardContext.Path, new BsonValue(ObjectId.NewObjectId()));
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+
+            return changed ? DocumentOperationResult.Updated() : DocumentOperationResult.NoChange();
+        }
+
         var predicateContext = BsonPathNavigator.CreateContext(document, _path, context.CollectionName, context.MigrationName);
 
         if (!predicateContext.Exists || predicateContext.Value.IsObjectId)
