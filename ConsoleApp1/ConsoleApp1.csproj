@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LiteDbX\LiteDBX.csproj" />
+    <ProjectReference Include="..\LiteDbX.Migrations\LiteDbX.Migrations.csproj" />
   </ItemGroup>
 
 </Project>

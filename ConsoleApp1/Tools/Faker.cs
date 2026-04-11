@@ -1,4 +1,4 @@
-﻿using LiteDB;
+﻿using LiteDbX;
 
 internal static partial class Faker
 {

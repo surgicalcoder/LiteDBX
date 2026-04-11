@@ -1,5 +1,12 @@
 ﻿using LiteDbX;
 using LiteDbX.Engine;
+using LiteDbX.Migrations;
+
+if (args.Length > 0 && string.Equals(args[0], "migrations-demo", StringComparison.OrdinalIgnoreCase))
+{
+    await RunMigrationsDemoAsync();
+    return;
+}
 
 var password = "46jLz5QWd5fI3m4LiL2r";
 var path = $"C:\\LiteDB\\Examples\\CrashDB_{DateTime.Now.Ticks}.db";
@@ -117,3 +124,52 @@ static async Task<List<BsonDocument>> ToListAsync(IAsyncEnumerable<BsonDocument>
 
     return results;
 }
+
+static async Task RunMigrationsDemoAsync()
+{
+    await using var db = await LiteDatabase.Open(":memory:");
+    var customers = db.GetCollection("customers");
+
+    await customers.Insert(new BsonDocument
+    {
+        ["_id"] = new BsonValue(1),
+        ["Name"] = new BsonValue("  Alice  "),
+        ["Profile"] = new BsonDocument()
+    });
+
+    await customers.Insert(new BsonDocument
+    {
+        ["_id"] = new BsonValue(2),
+        ["Name"] = new BsonValue("Bob"),
+        ["Orders"] = new BsonArray
+        {
+            new BsonDocument
+            {
+                ["Legacy"] = new BsonDocument()
+            }
+        }
+    });
+
+    var report = await db.Migrations()
+        .OnProgress(progress =>
+            Console.WriteLine($"[{progress.Stage}] migration={progress.MigrationName}, collection={progress.CollectionName ?? "-"}, scanned={progress.DocumentsScanned}, modified={progress.DocumentsModified}, inserted={progress.DocumentsInserted}"))
+        .Migration("demo-cleanup", m => m.ForCollection("customers", c =>
+        {
+            c.ModifyFieldWhen("Name", ctx => new BsonValue(ctx.Value.AsString.Trim()), BsonPredicates.IsString);
+            c.SetFieldWhen("**.Touched", new BsonValue(true), BsonPredicates.Always);
+            c.InsertDocumentWhen(new BsonDocument
+            {
+                ["_id"] = new BsonValue(3),
+                ["Name"] = new BsonValue("Seeded")
+            });
+        }))
+        .RunAsync(new MigrationRunOptions { StrictPathResolution = true });
+
+    Console.WriteLine($"Inserted by migration: {report.Migrations[0].DocumentsInserted}");
+
+    foreach (var doc in await ToListAsync(customers.FindAll()))
+    {
+        Console.WriteLine(doc.ToString());
+    }
+}
+
